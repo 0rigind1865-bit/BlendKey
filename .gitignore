@@ -1,0 +1,7 @@
+.build/
+build/
+.lexicon-src/
+.DS_Store
+*.xcodeproj
+.swiftpm/
+*.preview.png
