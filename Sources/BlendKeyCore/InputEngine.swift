@@ -69,15 +69,19 @@ public final class InputEngine {
     public var englishHintEnabled = true
     /// 英文詞偵測器（載妥後注入；nil 時只剩覆寫啟發式）
     public var englishDetector: EnglishDetector?
-    /// 使用者選字學習（nil 時不學習）
+    /// 使用者選字學習與自造詞（nil 時不學習）
     public var userPhrases: UserPhraseStore? {
         didSet {
             if let store = userPhrases {
                 decoder.scoreBonus = { [weak store] reading, value in
                     store?.bonus(reading: reading, value: value) ?? 0
                 }
+                decoder.extraUnigrams = { [weak store] reading in
+                    store?.userWords(reading: reading) ?? []
+                }
             } else {
                 decoder.scoreBonus = nil
+                decoder.extraUnigrams = nil
             }
             rewalk()
         }
@@ -160,9 +164,36 @@ public final class InputEngine {
 
     /// 失焦／換行時把組字區內容送出
     public func flush() -> String? {
+        learnPinnedWords()
         let text = committedText()
         reset()
         return text.isEmpty ? nil : text
+    }
+
+    /// 自動造詞：上屏時，把「連續被改字（pin）的單字串」回報為造詞候補。
+    /// 連續兩次上屏同一串，就升格為使用者詞（UserPhraseStore 負責門檻）。
+    private func learnPinnedWords() {
+        guard let store = userPhrases else { return }
+        var run: [DecodedSegment] = []
+        func closeRun() {
+            defer { run = [] }
+            guard (2...6).contains(run.count) else { return }
+            store.noteWordCandidate(
+                reading: run.compactMap(\.reading).joined(separator: "-"),
+                value: run.map(\.value).joined()
+            )
+        }
+        for segment in walked {
+            let isPinned = pins.contains {
+                $0.start == segment.start && $0.length == segment.length && $0.value == segment.value
+            }
+            if segment.length == 1, segment.reading != nil, isPinned {
+                run.append(segment)
+            } else {
+                closeRun()
+            }
+        }
+        closeRun()
     }
 
     // MARK: - 顯示

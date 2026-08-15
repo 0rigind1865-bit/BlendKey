@@ -20,6 +20,7 @@ if let text = try? String(contentsOfFile: dataPath, encoding: .utf8) {
 }
 
 let engine = InputEngine(lexicon: lexicon)
+engine.userPhrases = UserPhraseStore(fileURL: nil)  // 記憶體版：本次執行內可示範選字學習與自動造詞
 engine.englishDetector = try? EnglishDetector(contentsOf: URL(fileURLWithPath: "/usr/share/dict/words"))
 print("英文偵測：\(engine.englishDetector == nil ? "無" : "有（Tab 接受提示）")")
 print("鍵入大千鍵序（例：su3cl3 → 你好）。控制鍵：< > [ ] ` \\ !　結束：Ctrl-D")

@@ -32,6 +32,8 @@ public struct SentenceDecoder {
     private let lexicon: Lexicon
     /// 使用者學習加權：(讀音, 詞) → 額外分數
     public var scoreBonus: ((String, String) -> Double)?
+    /// 使用者自造詞：讀音 → 額外候選（與內建詞庫合流）
+    public var extraUnigrams: ((String) -> [Unigram])?
     /// 未知讀音（詞庫查不到的單音節）的懲罰分數
     private let unknownPenalty = -17.0
     /// ponytail: 每節點固定罰分，偏好長詞路徑；斷詞品質不夠再升級 bigram
@@ -41,8 +43,26 @@ public struct SentenceDecoder {
         self.lexicon = lexicon
     }
 
+    /// 詞圖搜尋跨距：至少留 6，使用者自造詞不受小詞庫的 maxSpan 限制
+    private var searchSpan: Int { max(lexicon.maxSpan, 6) }
+
     private func adjusted(_ unigram: Unigram, reading: String) -> Double {
         unigram.score + (scoreBonus?(reading, unigram.value) ?? 0)
+    }
+
+    /// 內建詞庫＋使用者詞合流，同值保留調整後分數較高者
+    private func allUnigrams(_ reading: String) -> [Unigram] {
+        let extras = extraUnigrams?(reading) ?? []
+        guard !extras.isEmpty else { return lexicon.unigrams(reading) }
+        var best: [String: Unigram] = [:]
+        for unigram in lexicon.unigrams(reading) + extras {
+            if let current = best[unigram.value],
+               adjusted(current, reading: reading) >= adjusted(unigram, reading: reading) {
+                continue
+            }
+            best[unigram.value] = unigram
+        }
+        return Array(best.values)
     }
 
     public func walk(_ elements: [Element], pins: [DecodedSegment] = []) -> [DecodedSegment] {
@@ -60,7 +80,7 @@ public struct SentenceDecoder {
         }
 
         for end in 1...n {
-            let earliest = max(0, end - lexicon.maxSpan)
+            let earliest = max(0, end - searchSpan)
             for start in earliest..<end {
                 guard !conflictsWithPin(start: start, end: end) else { continue }
                 for node in nodes(elements, start: start, end: end, pins: pins) {
@@ -85,9 +105,9 @@ public struct SentenceDecoder {
     /// 候選字窗用：從 start 起所有跨距的候選，長詞在前、同長依分數（含學習加權）
     public func candidateSegments(_ elements: [Element], start: Int) -> [DecodedSegment] {
         var segments: [DecodedSegment] = []
-        for length in stride(from: min(elements.count - start, lexicon.maxSpan), through: 1, by: -1) {
+        for length in stride(from: min(elements.count - start, searchSpan), through: 1, by: -1) {
             guard let reading = joinedReading(elements, start: start, end: start + length) else { continue }
-            let ranked = lexicon.unigrams(reading)
+            let ranked = allUnigrams(reading)
                 .sorted { adjusted($0, reading: reading) > adjusted($1, reading: reading) }
             for unigram in ranked {
                 segments.append(DecodedSegment(start: start, length: length, value: unigram.value, reading: reading))
@@ -111,7 +131,7 @@ public struct SentenceDecoder {
             return [Node(segment: DecodedSegment(start: start, length: 1, value: text, reading: nil), score: -0.1)]
         }
         guard let reading = joinedReading(elements, start: start, end: end) else { return [] }
-        let unigrams = lexicon.unigrams(reading)
+        let unigrams = allUnigrams(reading)
         if let top = unigrams.max(by: { adjusted($0, reading: reading) < adjusted($1, reading: reading) }) {
             return [Node(
                 segment: DecodedSegment(start: start, length: length, value: top.value, reading: reading),

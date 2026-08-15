@@ -29,6 +29,72 @@ import Testing
     #expect(third.preedit().text == "妳")
 }
 
+/// 從候選窗選出指定的字（依內容找位置，不寫死數字鍵）
+private func 選字(_ engine: InputEngine, _ value: String) {
+    guard let sheet = engine.sheetView(),
+          let index = sheet.items.firstIndex(where: { $0.value == value }) else {
+        Issue.record("候選窗裡找不到「\(value)」")
+        return
+    }
+    _ = engine.handle(.character(Character("\(index + 1)")))
+}
+
+/// 打 ㄋㄧˇ ㄐㄧㄝˋ，把兩個字都改成「擬」「界」後上屏
+private func 打擬界並上屏(_ store: UserPhraseStore) -> String? {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    engine.userPhrases = store
+    for key in "su3ru,4" { _ = engine.handle(.character(key)) }  // ㄋㄧˇ ㄐㄧㄝˋ
+    _ = engine.handle(.arrowLeft)   // ↓ 開的是游標右邊的字，所以要回到句首
+    _ = engine.handle(.arrowLeft)
+    _ = engine.handle(.arrowDown)   // 開第一個字的候選
+    選字(engine, "擬")              // pin 擬，游標跳到第二字
+    _ = engine.handle(.arrowDown)
+    選字(engine, "界")              // pin 界
+    return engine.handle(.enter).commitText
+}
+
+@Test func 連續兩次改字上屏自動造詞() {
+    let store = UserPhraseStore(fileURL: nil)
+    #expect(打擬界並上屏(store) == "擬界")  // 第一次：候補
+    #expect(打擬界並上屏(store) == "擬界")  // 第二次：升格為使用者詞
+
+    // 第三次：不用改字，直接組出「擬界」
+    let engine = InputEngine(lexicon: 測試詞庫)
+    engine.userPhrases = store
+    for key in "su3ru,4" { _ = engine.handle(.character(key)) }
+    #expect(engine.preedit().text == "擬界")
+    // 候選窗裡也看得到這個使用者詞
+    _ = engine.handle(.space)
+    #expect(engine.sheetView()?.items.contains { $0.value == "擬界" } == true)
+}
+
+@Test func 只改字一次不會造詞() {
+    let store = UserPhraseStore(fileURL: nil)
+    #expect(打擬界並上屏(store) == "擬界")
+
+    let engine = InputEngine(lexicon: 測試詞庫)
+    engine.userPhrases = store
+    for key in "su3ru,4" { _ = engine.handle(.character(key)) }
+    #expect(engine.preedit().text != "擬界")  // 一次只是候補，尚未成詞
+}
+
+@Test func 舊版學習檔案自動遷移() throws {
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("blendkey-legacy-\(UInt32.random(in: 0..<UInt32.max)).json")
+    defer { try? FileManager.default.removeItem(at: url) }
+    // 第一版格式：頂層直接是 讀音 → 詞 → 次數
+    try Data(#"{"ㄋㄧˇ":{"妳":3}}"#.utf8).write(to: url)
+
+    let store = UserPhraseStore(fileURL: url)
+    #expect(store.bonus(reading: "ㄋㄧˇ", value: "妳") > 2.0)  // 舊權重保留
+    store.noteWordCandidate(reading: "ㄋㄧˇ-ㄐㄧㄝˋ", value: "擬界")
+    store.noteWordCandidate(reading: "ㄋㄧˇ-ㄐㄧㄝˋ", value: "擬界")
+
+    let reloaded = UserPhraseStore(fileURL: url)  // 以新格式重載
+    #expect(reloaded.bonus(reading: "ㄋㄧˇ", value: "妳") > 2.0)
+    #expect(reloaded.userWords(reading: "ㄋㄧˇ-ㄐㄧㄝˋ").map(\.value) == ["擬界"])
+}
+
 @Test func 學習權重可存檔重載() throws {
     let url = FileManager.default.temporaryDirectory
         .appendingPathComponent("blendkey-test-\(UInt32.random(in: 0..<UInt32.max)).json")
