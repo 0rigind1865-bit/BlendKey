@@ -3,7 +3,9 @@
 public enum KeyInput: Equatable, Sendable {
     /// 未修飾的可列印字元（字母、數字、符號）
     case character(Character)
-    /// Shift+字母直出英文（M3）：字元已含大小寫資訊
+    /// 同一鍵的自動重複事件（長按）：引擎據此判斷使用者要原始字元
+    case repeatedCharacter(Character)
+    /// Shift+字母直出英文：字元已含大小寫資訊
     case englishLiteral(Character)
     case space
     case enter

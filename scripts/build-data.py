@@ -33,6 +33,20 @@ for p in rows("phrase.occ"):
 
 exclusions = {p[0] for p in rows("exclusion.txt")}
 
+# 破音字讀音權重（小麥 heterophony 表）：字的詞頻只該歸給常用讀音，
+# 否則「和」的超高詞頻會灌進罕用音 ㄏㄨㄛˋ，把「或」壓下去。
+hetero = {}  # 字 → {讀音 → 權重}
+for name, factor in [("heterophony1.list", 1.0), ("heterophony2.list", 0.2), ("heterophony3.list", 0.05)]:
+    for p in rows(name):
+        if len(p) >= 2:
+            hetero.setdefault(p[0], {})[p[1]] = factor
+
+
+def reading_factor(ch, syl):
+    if ch not in hetero:
+        return 1.0  # 非破音字（或表上沒有）：不打折
+    return hetero[ch].get(syl, 0.002)  # 表上有這個字但不是列出的讀音：重打折
+
 entries = {}  # (讀音, 詞) -> 出現次數
 
 # 詞條：BPMFMappings 每行「詞 音節…」
@@ -54,7 +68,8 @@ for p in rows("BPMFBase.txt"):
     if key not in char_rank:
         char_rank[key] = rank_within[syl]
         rank_within[syl] += 1
-    entries[key] = max(entries.get(key, 0), counts.get(ch, 0))
+    weighted = counts.get(ch, 0) * reading_factor(ch, syl)
+    entries[key] = max(entries.get(key, 0), weighted)
 
 total = sum(counts.values()) or 1
 

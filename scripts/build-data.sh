@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 RAW="https://raw.githubusercontent.com/openvanilla/McBopomofo/master"
 mkdir -p .lexicon-src Resources/data
 
-for f in BPMFBase.txt BPMFMappings.txt phrase.occ; do
+for f in BPMFBase.txt BPMFMappings.txt phrase.occ heterophony1.list heterophony2.list heterophony3.list; do
   [ -f ".lexicon-src/$f" ] || curl -fsSL "$RAW/Source/Data/$f" -o ".lexicon-src/$f"
 done
 # 非必要檔：抓不到不擋流程

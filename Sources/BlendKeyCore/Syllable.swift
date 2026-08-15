@@ -65,4 +65,9 @@ public enum ZhuyinComponent: Equatable, Sendable {
     case medial(Syllable.Medial)
     case final(Syllable.Final)
     case tone(Syllable.Tone)
+
+    public var isTone: Bool {
+        if case .tone = self { return true }
+        return false
+    }
 }

@@ -73,6 +73,40 @@ private let 偵測器 = EnglishDetector(words: ["google", "hello", "OK"])
     _ = engine  // 引擎層由 rawKeys>=4 && 覆寫>=2 把關
 }
 
+// MARK: - 長按直出
+
+@Test func 長按字母直出英文() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    _ = engine.handle(.character("g"))          // 吃成 ㄕ
+    _ = engine.handle(.repeatedCharacter("g"))  // 長按：退掉 ㄕ、改直出 g
+    #expect(engine.preedit().text == "g")
+    _ = engine.handle(.repeatedCharacter("g"))  // 後續重複吞掉，不會 ggg
+    #expect(engine.preedit().text == "g")
+    for key in "su3" { _ = engine.handle(.character(key)) }
+    #expect(engine.handle(.enter).commitText == "g你")
+}
+
+@Test func 長按數字直出數字() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    _ = engine.handle(.character("8"))          // 吃成 ㄚ
+    _ = engine.handle(.repeatedCharacter("8"))
+    #expect(engine.preedit().text == "8")
+}
+
+@Test func 長按聲調鍵不誤觸() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    for key in "su3" { _ = engine.handle(.character(key)) }  // 你（音節已完成）
+    let output = engine.handle(.repeatedCharacter("3"))
+    #expect(output == .consumed)
+    #expect(engine.preedit().text == "你")
+}
+
+@Test func 閒置時長按未映射鍵放行() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    engine.fullWidthPunctuation = false
+    #expect(engine.handle(.repeatedCharacter("=")) == .ignored)
+}
+
 // MARK: - Shift 單擊偵測
 
 private func run(_ detector: inout ShiftTapDetector, _ events: [(ShiftTapDetector.FlagsEvent, Double)]) -> Bool {

@@ -60,6 +60,8 @@ public final class InputEngine {
         var highlighted: Int
     }
     private var sheet: Sheet?
+    /// 已由長按轉成直出的鍵：吞掉它後續的自動重複
+    private var longPressKey: Character?
 
     /// 全形標點開關（偏好設定）
     public var fullWidthPunctuation = true
@@ -101,12 +103,15 @@ public final class InputEngine {
     // MARK: - 事件入口
 
     public func handle(_ key: KeyInput) -> Output {
+        if case .repeatedCharacter = key {} else { longPressKey = nil }
         if sheet != nil, let output = handleInSheet(key) {
             return output
         }
         switch key {
         case .character(let ch):
             return handleCharacter(ch)
+        case .repeatedCharacter(let ch):
+            return handleLongPress(ch)
         case .englishLiteral(let ch):
             composer.clear()
             insertLiteral(String(ch))
@@ -227,6 +232,21 @@ public final class InputEngine {
 
     // MARK: - 字元與候選窗
 
+    /// 長按（自動重複）：把剛被吃成注音組件的鍵退掉、改為直出原始字元。
+    /// 聲調鍵除外（按下當下音節已完成，undo 語意混亂，且空組字區時聲調鍵本來就放行）。
+    private func handleLongPress(_ ch: Character) -> Output {
+        if longPressKey == ch { return .consumed }  // 已轉換，吞掉後續重複
+        if composer.rawKeys.last == ch,
+           let component = DachenLayout.component(for: ch),
+           !component.isTone {
+            _ = composer.backspace()
+            insertLiteral(String(ch))
+            longPressKey = ch
+            return .consumed
+        }
+        return isIdle ? .ignored : .consumed
+    }
+
     private func handleCharacter(_ ch: Character) -> Output {
         switch composer.press(ch) {
         case .absorbed:
@@ -288,6 +308,8 @@ public final class InputEngine {
         case .englishLiteral:
             sheet = nil
             return nil
+        case .repeatedCharacter:
+            return .consumed  // 候選窗開啟時忽略長按重複，避免連續選字
         }
     }
 

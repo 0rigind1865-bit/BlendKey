@@ -164,7 +164,9 @@ class BlendKeyInputController: IMKInputController {
         }
         guard ch.isASCII, !ch.isNewline else { return nil }
         // 統一小寫餵大千鍵位表；數字與符號原樣（引擎自行判斷選字／標點／拒收）
-        return .character(Character(String(ch).lowercased()))
+        let lower = Character(String(ch).lowercased())
+        // 長按（鍵盤自動重複）：交給引擎轉直出英文字母／數字
+        return event.isARepeat ? .repeatedCharacter(lower) : .character(lower)
     }
 
     // MARK: - UI 同步
