@@ -28,8 +28,10 @@ public struct DecodedSegment: Equatable, Sendable {
 
 /// 整句解碼：音節串 → 詞圖 → 最佳路徑（unigram 分數 DP）。
 /// pin（使用者指定的候選）強制走過，等長重疊的其他節點一律跳過。
-public struct SentenceDecoder: Sendable {
+public struct SentenceDecoder {
     private let lexicon: Lexicon
+    /// 使用者學習加權：(讀音, 詞) → 額外分數
+    public var scoreBonus: ((String, String) -> Double)?
     /// 未知讀音（詞庫查不到的單音節）的懲罰分數
     private let unknownPenalty = -17.0
     /// ponytail: 每節點固定罰分，偏好長詞路徑；斷詞品質不夠再升級 bigram
@@ -37,6 +39,10 @@ public struct SentenceDecoder: Sendable {
 
     public init(lexicon: Lexicon) {
         self.lexicon = lexicon
+    }
+
+    private func adjusted(_ unigram: Unigram, reading: String) -> Double {
+        unigram.score + (scoreBonus?(reading, unigram.value) ?? 0)
     }
 
     public func walk(_ elements: [Element], pins: [DecodedSegment] = []) -> [DecodedSegment] {
@@ -76,12 +82,14 @@ public struct SentenceDecoder: Sendable {
         return result.reversed()
     }
 
-    /// 候選字窗用：從 start 起所有跨距的候選，長詞在前、同長依分數
+    /// 候選字窗用：從 start 起所有跨距的候選，長詞在前、同長依分數（含學習加權）
     public func candidateSegments(_ elements: [Element], start: Int) -> [DecodedSegment] {
         var segments: [DecodedSegment] = []
         for length in stride(from: min(elements.count - start, lexicon.maxSpan), through: 1, by: -1) {
             guard let reading = joinedReading(elements, start: start, end: start + length) else { continue }
-            for unigram in lexicon.unigrams(reading) {
+            let ranked = lexicon.unigrams(reading)
+                .sorted { adjusted($0, reading: reading) > adjusted($1, reading: reading) }
+            for unigram in ranked {
                 segments.append(DecodedSegment(start: start, length: length, value: unigram.value, reading: reading))
             }
         }
@@ -104,8 +112,11 @@ public struct SentenceDecoder: Sendable {
         }
         guard let reading = joinedReading(elements, start: start, end: end) else { return [] }
         let unigrams = lexicon.unigrams(reading)
-        if let top = unigrams.first {
-            return [Node(segment: DecodedSegment(start: start, length: length, value: top.value, reading: reading), score: top.score)]
+        if let top = unigrams.max(by: { adjusted($0, reading: reading) < adjusted($1, reading: reading) }) {
+            return [Node(
+                segment: DecodedSegment(start: start, length: length, value: top.value, reading: reading),
+                score: adjusted(top, reading: reading)
+            )]
         }
         if length == 1 {
             // 詞庫沒有的讀音：原樣顯示注音，重罰但仍可通行

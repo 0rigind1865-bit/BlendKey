@@ -44,8 +44,9 @@ public final class InputEngine {
 
     // MARK: - 狀態
 
-    private let decoder: SentenceDecoder
-    private let pageSize = 9
+    private var decoder: SentenceDecoder
+    /// 候選字窗每頁字數（偏好設定）
+    public var pageSize = 9
 
     private var elements: [Element] = []
     private var cursor = 0  // 元素邊界位置 0...elements.count
@@ -60,10 +61,25 @@ public final class InputEngine {
     }
     private var sheet: Sheet?
 
-    /// 全形標點開關（M4 接偏好設定）
+    /// 全形標點開關（偏好設定）
     public var fullWidthPunctuation = true
-    /// 英文詞偵測器（載妥後注入；nil 時不做自動偵測）
+    /// 英文自動偵測開關（偏好設定）
+    public var englishHintEnabled = true
+    /// 英文詞偵測器（載妥後注入；nil 時只剩覆寫啟發式）
     public var englishDetector: EnglishDetector?
+    /// 使用者選字學習（nil 時不學習）
+    public var userPhrases: UserPhraseStore? {
+        didSet {
+            if let store = userPhrases {
+                decoder.scoreBonus = { [weak store] reading, value in
+                    store?.bonus(reading: reading, value: value) ?? 0
+                }
+            } else {
+                decoder.scoreBonus = nil
+            }
+            rewalk()
+        }
+    }
 
     public init(lexicon: Lexicon) {
         decoder = SentenceDecoder(lexicon: lexicon)
@@ -74,6 +90,7 @@ public final class InputEngine {
     /// 組字中的原始按鍵看起來是英文時，提供 Tab 直接上英文的提示。
     /// 兩個訊號：命中英文詞典，或注音槽位被反覆覆寫（打英文的特徵）。
     public var englishHint: String? {
+        guard englishHintEnabled else { return nil }
         let raw = composer.rawKeys
         guard raw.count >= 3, raw.allSatisfy(\.isLetter) else { return nil }
         if let detector = englishDetector, detector.isWord(raw) { return raw }
@@ -285,6 +302,9 @@ public final class InputEngine {
     private func select(_ segment: DecodedSegment) {
         pins.removeAll { $0.start < segment.end && segment.start < $0.end }
         pins.append(segment)
+        if let reading = segment.reading {
+            userPhrases?.bump(reading: reading, value: segment.value)
+        }
         rewalk()
         cursor = min(segment.end, elements.count)
         sheet = nil

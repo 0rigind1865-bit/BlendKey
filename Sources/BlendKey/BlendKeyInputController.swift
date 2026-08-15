@@ -11,6 +11,12 @@ class BlendKeyInputController: IMKInputController {
     /// 中／英模式是整個輸入法共享的（跨應用程式一致）
     private static var chineseMode = true
     private static var shiftDetector = ShiftTapDetector()
+    /// 使用者選字學習：全行程共用一份
+    private static let userPhrases = UserPhraseStore(
+        fileURL: FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("BlendKey/userphrases.json")
+    )
 
     private var engine: InputEngine?
     private let kNoRange = NSRange(location: NSNotFound, length: NSNotFound)
@@ -21,8 +27,28 @@ class BlendKeyInputController: IMKInputController {
     }
 
     override func recognizedEvents(_ sender: Any!) -> Int {
-        // flagsChanged 供 M3 的 Shift 單擊偵測
+        // flagsChanged 供 Shift 單擊偵測
         Int(NSEvent.EventTypeMask([.keyDown, .flagsChanged]).rawValue)
+    }
+
+    override func menu() -> NSMenu! {
+        let menu = NSMenu()
+        let mode = NSMenuItem(
+            title: "目前模式：\(Self.chineseMode ? "中文" : "英文")（Shift 切換）",
+            action: nil, keyEquivalent: ""
+        )
+        mode.isEnabled = false
+        menu.addItem(mode)
+        menu.addItem(.separator())
+        let preferences = NSMenuItem(title: "偏好設定…", action: #selector(showPreferences(_:)), keyEquivalent: "")
+        preferences.target = self
+        menu.addItem(preferences)
+        return menu
+    }
+
+    /// IMK 內建的偏好設定進入點，換成自己的 SwiftUI 視窗
+    override func showPreferences(_ sender: Any!) {
+        SettingsWindowController.shared.show()
     }
 
     override func activateServer(_ sender: Any!) {
@@ -77,6 +103,7 @@ class BlendKeyInputController: IMKInputController {
 
     /// Shift 單擊切換中英。flagsChanged 在 NSMenu／開存檔對話框中收不到（平台限制）。
     private func handleFlagsChanged(_ event: NSEvent, client: IMKTextInput) {
+        guard UserDefaults.standard.bool(forKey: SettingKey.shiftToggle) else { return }
         let flags = event.modifierFlags
             .intersection(.deviceIndependentFlagsMask)
             .subtracting(.capsLock)
@@ -144,9 +171,18 @@ class BlendKeyInputController: IMKInputController {
 
     private func ensureEngine() -> InputEngine? {
         if engine == nil, let lexicon = LexiconStore.lexicon {
-            engine = InputEngine(lexicon: lexicon)
+            let created = InputEngine(lexicon: lexicon)
+            created.userPhrases = Self.userPhrases
+            engine = created
         }
-        engine?.englishDetector = LexiconStore.englishDetector
+        // 偏好設定即時生效（每次按鍵讀一次 UserDefaults，成本可忽略）
+        if let engine {
+            let defaults = UserDefaults.standard
+            engine.englishDetector = LexiconStore.englishDetector
+            engine.englishHintEnabled = defaults.bool(forKey: SettingKey.englishHint)
+            engine.fullWidthPunctuation = defaults.bool(forKey: SettingKey.fullWidthPunctuation)
+            engine.pageSize = defaults.integer(forKey: SettingKey.pageSize)
+        }
         return engine
     }
 
