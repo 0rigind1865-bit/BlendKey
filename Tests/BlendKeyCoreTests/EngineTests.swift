@@ -39,6 +39,18 @@ private func type(_ engine: InputEngine, _ keys: String) {
     #expect(engine.preedit().text == "妳好")
 }
 
+@Test func 候選窗直式導航() {
+    let engine = makeEngine()
+    type(engine, "su3cl3 ")  // 開候選：你好、你、妳、擬
+    _ = engine.handle(.arrowDown)  // ↓ → 你
+    _ = engine.handle(.arrowDown)  // ↓ → 妳
+    #expect(engine.sheetView()?.highlightedInPage == 2)
+    _ = engine.handle(.arrowUp)    // ↑ → 你
+    _ = engine.handle(.arrowDown)  // ↓ → 妳
+    _ = engine.handle(.enter)      // 選「妳」
+    #expect(engine.preedit().text == "妳好")
+}
+
 @Test func 游標回改字() {
     let engine = makeEngine()
     type(engine, "su3cl3")

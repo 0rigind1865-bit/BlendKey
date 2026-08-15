@@ -311,19 +311,24 @@ public final class InputEngine {
             // 繼續打字：關窗、照常組字
             sheet = nil
             return nil
-        case .space, .arrowRight:
+        // 直式清單導航：↑↓ 逐項、←→ 與 PgUp/PgDn 翻頁、空白循環
+        case .space:
             current.highlighted = (current.highlighted + 1) % current.all.count
             sheet = current
             return .consumed
-        case .arrowLeft:
-            current.highlighted = (current.highlighted - 1 + current.all.count) % current.all.count
+        case .arrowDown:
+            current.highlighted = min(current.all.count - 1, current.highlighted + 1)
             sheet = current
             return .consumed
-        case .arrowDown, .pageDown, .tab:
+        case .arrowUp:
+            current.highlighted = max(0, current.highlighted - 1)
+            sheet = current
+            return .consumed
+        case .arrowRight, .pageDown, .tab:
             current.highlighted = min(current.all.count - 1, current.highlighted + pageSize)
             sheet = current
             return .consumed
-        case .arrowUp, .pageUp:
+        case .arrowLeft, .pageUp:
             current.highlighted = max(0, current.highlighted - pageSize)
             sheet = current
             return .consumed

@@ -83,6 +83,12 @@ class BlendKeyInputController: IMKInputController {
         guard Self.chineseMode else { return false }  // 英文模式：全部放行
         guard let engine = ensureEngine() else { return false }  // 詞庫載入前放行
 
+        // Caps Lock 亮：英數直通（所有按鍵放行，字母數字符號一致）
+        if event.modifierFlags.contains(.capsLock) {
+            flushBeforePassthrough(engine, client: client)
+            return false
+        }
+
         // cmd／ctrl／opt 快捷鍵：先把組字區上屏，再放行給應用程式
         if !event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
             flushBeforePassthrough(engine, client: client)
@@ -103,6 +109,16 @@ class BlendKeyInputController: IMKInputController {
 
     /// Shift 單擊切換中英。flagsChanged 在 NSMenu／開存檔對話框中收不到（平台限制）。
     private func handleFlagsChanged(_ event: NSEvent, client: IMKTextInput) {
+        // Caps Lock 切換：亮＝英數直通模式（比照內建注音的習慣）
+        if event.keyCode == UInt16(kVK_CapsLock) {
+            let capsOn = event.modifierFlags.contains(.capsLock)
+            if capsOn, let engine, let text = engine.flush() {
+                client.insertText(text, replacementRange: kNoRange)
+            }
+            if let engine { syncUI(engine, client: client) }
+            ModeHUD.shared.flash(chinese: !capsOn && Self.chineseMode, near: caretLineRect(client))
+            return
+        }
         guard UserDefaults.standard.bool(forKey: SettingKey.shiftToggle) else { return }
         let flags = event.modifierFlags
             .intersection(.deviceIndependentFlagsMask)
@@ -156,9 +172,6 @@ class BlendKeyInputController: IMKInputController {
         }
         guard let chars = event.characters, chars.count == 1, let ch = chars.first else { return nil }
         if ch == " " { return .space }
-        if event.modifierFlags.contains(.capsLock), ch.isLetter {
-            return nil  // Caps Lock 亮著：字母直接放行（等同臨時英文）
-        }
         if event.modifierFlags.contains(.shift), ch.isLetter {
             return .englishLiteral(ch)  // Shift+字母：英文直出（大小寫依實際輸出）
         }

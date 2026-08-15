@@ -2,39 +2,46 @@ import Cocoa
 import SwiftUI
 import BlendKeyCore
 
-/// 候選字窗內容（無狀態，每次呈現直接換 rootView）
+/// 候選字窗內容（無狀態，每次呈現直接換 rootView）：
+/// 直式上下清單，比照系統內建注音的樣式
 private struct CandidateView: View {
     let sheet: InputEngine.SheetView
 
     var body: some View {
-        HStack(spacing: 2) {
+        VStack(alignment: .leading, spacing: 1) {
             ForEach(Array(sheet.items.enumerated()), id: \.offset) { index, item in
                 let highlighted = index == sheet.highlightedInPage
-                HStack(spacing: 5) {
+                HStack(spacing: 8) {
                     Text(item.label)
-                        .font(.system(size: 11))
+                        .font(.system(size: 11).monospacedDigit())
                         .foregroundStyle(highlighted ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
+                        .frame(width: 14, alignment: .trailing)
                     Text(item.value)
                         .font(.system(size: 17))
                         .foregroundStyle(highlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+                    Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .background {
                     if highlighted {
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
                             .fill(Color.accentColor)
                     }
                 }
             }
             if sheet.pageCount > 1 {
-                Text("\(sheet.pageIndex + 1)/\(sheet.pageCount)")
+                Text("\(sheet.pageIndex + 1)/\(sheet.pageCount) ⇠⇢")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
-                    .padding(.leading, 4)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.horizontal, 8)
+                    .padding(.top, 2)
             }
         }
-        .padding(7)
+        .padding(6)
+        .frame(minWidth: 108)
         .fixedSize()
     }
 }
