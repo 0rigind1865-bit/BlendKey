@@ -8,6 +8,10 @@ import BlendKeyCore
 @objc(BlendKeyInputController)
 class BlendKeyInputController: IMKInputController {
 
+    /// 中／英模式是整個輸入法共享的（跨應用程式一致）
+    private static var chineseMode = true
+    private static var shiftDetector = ShiftTapDetector()
+
     private var engine: InputEngine?
     private let kNoRange = NSRange(location: NSNotFound, length: NSNotFound)
 
@@ -42,7 +46,15 @@ class BlendKeyInputController: IMKInputController {
 
     override func handle(_ event: NSEvent!, client sender: Any!) -> Bool {
         guard let event, let client = sender as? IMKTextInput else { return false }
-        guard event.type == .keyDown else { return false }  // flagsChanged：M3
+
+        if event.type == .flagsChanged {
+            handleFlagsChanged(event, client: client)
+            return false  // 修飾鍵事件永遠放行
+        }
+        guard event.type == .keyDown else { return false }
+        Self.shiftDetector.noteKeyDown()
+
+        guard Self.chineseMode else { return false }  // 英文模式：全部放行
         guard let engine = ensureEngine() else { return false }  // 詞庫載入前放行
 
         // cmd／ctrl／opt 快捷鍵：先把組字區上屏，再放行給應用程式
@@ -61,6 +73,41 @@ class BlendKeyInputController: IMKInputController {
         }
         syncUI(engine, client: client)
         return output.handled
+    }
+
+    /// Shift 單擊切換中英。flagsChanged 在 NSMenu／開存檔對話框中收不到（平台限制）。
+    private func handleFlagsChanged(_ event: NSEvent, client: IMKTextInput) {
+        let flags = event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .subtracting(.capsLock)
+        let isShiftKey = event.keyCode == 56 || event.keyCode == 60  // 左／右 Shift
+
+        let flagsEvent: ShiftTapDetector.FlagsEvent
+        if isShiftKey && flags == .shift {
+            flagsEvent = .shiftDown(keyCode: event.keyCode)
+        } else if isShiftKey && flags.isEmpty {
+            flagsEvent = .allReleased(keyCode: event.keyCode)
+        } else {
+            flagsEvent = .other
+        }
+        guard Self.shiftDetector.process(flagsEvent, at: event.timestamp) else { return }
+
+        Self.chineseMode.toggle()
+        Log.general.info("切換模式：\(Self.chineseMode ? "中文" : "英文", privacy: .public)")
+        if !Self.chineseMode, let engine {
+            // 切到英文前先把組字區上屏
+            if let text = engine.flush() {
+                client.insertText(text, replacementRange: kNoRange)
+            }
+            syncUI(engine, client: client)
+        }
+        ModeHUD.shared.flash(chinese: Self.chineseMode, near: caretLineRect(client))
+    }
+
+    private func caretLineRect(_ client: IMKTextInput) -> NSRect {
+        var rect = NSRect.zero
+        client.attributes(forCharacterIndex: 0, lineHeightRectangle: &rect)
+        return rect
     }
 
     // MARK: - 按鍵轉換
@@ -82,11 +129,14 @@ class BlendKeyInputController: IMKInputController {
         }
         guard let chars = event.characters, chars.count == 1, let ch = chars.first else { return nil }
         if ch == " " { return .space }
+        if event.modifierFlags.contains(.capsLock), ch.isLetter {
+            return nil  // Caps Lock 亮著：字母直接放行（等同臨時英文）
+        }
         if event.modifierFlags.contains(.shift), ch.isLetter {
-            return nil  // M1：Shift+字母放行；M3 改為 .englishLiteral 直出
+            return .englishLiteral(ch)  // Shift+字母：英文直出（大小寫依實際輸出）
         }
         guard ch.isASCII, !ch.isNewline else { return nil }
-        // 統一小寫餵大千鍵位表；數字與符號原樣（引擎自行判斷選字／拒收）
+        // 統一小寫餵大千鍵位表；數字與符號原樣（引擎自行判斷選字／標點／拒收）
         return .character(Character(String(ch).lowercased()))
     }
 
@@ -96,6 +146,7 @@ class BlendKeyInputController: IMKInputController {
         if engine == nil, let lexicon = LexiconStore.lexicon {
             engine = InputEngine(lexicon: lexicon)
         }
+        engine?.englishDetector = LexiconStore.englishDetector
         return engine
     }
 
@@ -109,7 +160,7 @@ class BlendKeyInputController: IMKInputController {
 
     private func syncUI(_ engine: InputEngine, client: IMKTextInput) {
         setMarked(engine.preedit(), client: client)
-        if let sheet = engine.sheetView() {
+        if let sheet = engine.sheetView() ?? engine.englishHintView() {
             var lineRect = NSRect.zero
             client.attributes(forCharacterIndex: sheet.anchorUTF16, lineHeightRectangle: &lineRect)
             CandidatePanel.shared.present(

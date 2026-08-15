@@ -1,0 +1,123 @@
+import Testing
+@testable import BlendKeyCore
+
+// MARK: - 全形標點
+
+@Test func 閒置時標點直接上屏() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    let output = engine.handle(.character("<"))
+    #expect(output == InputEngine.Output(handled: true, commitText: "，"))
+    #expect(engine.isIdle)
+}
+
+@Test func 組字中標點進組字區() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    for key in "su3cl3" { _ = engine.handle(.character(key)) }
+    _ = engine.handle(.character("!"))
+    #expect(engine.preedit().text == "你好！")
+    #expect(engine.handle(.enter).commitText == "你好！")
+}
+
+@Test func 關閉全形標點時放行() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    engine.fullWidthPunctuation = false
+    #expect(engine.handle(.character("<")) == .ignored)
+}
+
+// MARK: - 英文自動偵測
+
+private let 偵測器 = EnglishDetector(words: ["google", "hello", "OK"])
+
+@Test func 英文詞偵測() {
+    #expect(偵測器.isWord("google"))
+    #expect(偵測器.isWord("Hello"))  // 不分大小寫
+    #expect(偵測器.isWord("ok"))
+    #expect(!偵測器.isWord("goog"))
+    #expect(!偵測器.isWord("xyzzy"))
+}
+
+@Test func 打英文單字出現提示_Tab上字() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    engine.englishDetector = 偵測器
+    for key in "google" { _ = engine.handle(.character(key)) }
+    #expect(engine.englishHint == "google")
+    #expect(engine.englishHintView()?.items.first?.value == "google")
+    _ = engine.handle(.tab)
+    #expect(engine.preedit().text == "google")
+    #expect(engine.handle(.enter).commitText == "google")
+}
+
+@Test func 注音打字不誤觸英文提示() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    engine.englishDetector = 偵測器
+    for key in "su3cl" { _ = engine.handle(.character(key)) }  // 你＋組字中 ㄏㄠ
+    #expect(engine.englishHint == nil)  // rawKeys「cl」不是英文詞
+}
+
+@Test func 覆寫啟發式偵測詞典外的英文() {
+    // 「vercel」不在詞典裡，但打字過程注音槽位反覆覆寫 → 仍給提示
+    let engine = InputEngine(lexicon: 測試詞庫)
+    engine.englishDetector = 偵測器
+    for key in "vercel" { _ = engine.handle(.character(key)) }
+    #expect(engine.englishHint == "vercel")
+    _ = engine.handle(.tab)
+    #expect(engine.handle(.enter).commitText == "vercel")
+}
+
+@Test func 單次覆寫的打錯字不誤觸() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    var composer = SyllableComposer()
+    _ = composer.press("g")  // ㄕ
+    _ = composer.press("s")  // 改成 ㄋ（覆寫一次）
+    #expect(composer.overwriteCount == 1)
+    _ = engine  // 引擎層由 rawKeys>=4 && 覆寫>=2 把關
+}
+
+// MARK: - Shift 單擊偵測
+
+private func run(_ detector: inout ShiftTapDetector, _ events: [(ShiftTapDetector.FlagsEvent, Double)]) -> Bool {
+    var fired = false
+    for (event, time) in events {
+        fired = detector.process(event, at: time)
+    }
+    return fired
+}
+
+@Test func Shift單擊觸發() {
+    var detector = ShiftTapDetector()
+    #expect(run(&detector, [(.shiftDown(keyCode: 56), 0), (.allReleased(keyCode: 56), 0.1)]))
+}
+
+@Test func Shift長按不觸發() {
+    var detector = ShiftTapDetector()
+    #expect(!run(&detector, [(.shiftDown(keyCode: 56), 0), (.allReleased(keyCode: 56), 0.5)]))
+}
+
+@Test func Shift加字母不觸發() {
+    var detector = ShiftTapDetector()
+    _ = detector.process(.shiftDown(keyCode: 56), at: 0)
+    detector.noteKeyDown()  // Shift+G 打字
+    let fired = detector.process(.allReleased(keyCode: 56), at: 0.1)
+    #expect(!fired)
+}
+
+@Test func 組合修飾鍵不觸發() {
+    var detector = ShiftTapDetector()
+    #expect(!run(&detector, [
+        (.shiftDown(keyCode: 56), 0),
+        (.other, 0.05),  // cmd 加入
+        (.allReleased(keyCode: 56), 0.1),
+    ]))
+}
+
+@Test func 冗餘事件防抖() {
+    var detector = ShiftTapDetector()
+    #expect(run(&detector, [(.shiftDown(keyCode: 56), 0), (.allReleased(keyCode: 56), 0.1)]))
+    // Electron 式冗餘重放：40ms 內同樣序列
+    #expect(!run(&detector, [(.shiftDown(keyCode: 56), 0.11), (.allReleased(keyCode: 56), 0.13)]))
+}
+
+@Test func 左右Shift不混淆() {
+    var detector = ShiftTapDetector()
+    #expect(!run(&detector, [(.shiftDown(keyCode: 56), 0), (.allReleased(keyCode: 60), 0.1)]))
+}

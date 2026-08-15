@@ -60,14 +60,26 @@ public final class InputEngine {
     }
     private var sheet: Sheet?
 
+    /// 全形標點開關（M4 接偏好設定）
+    public var fullWidthPunctuation = true
+    /// 英文詞偵測器（載妥後注入；nil 時不做自動偵測）
+    public var englishDetector: EnglishDetector?
+
     public init(lexicon: Lexicon) {
         decoder = SentenceDecoder(lexicon: lexicon)
     }
 
     public var isIdle: Bool { elements.isEmpty && composer.isEmpty }
 
-    /// 組字中原始按鍵（供英文自動偵測）
-    public var pendingRawKeys: String { composer.rawKeys }
+    /// 組字中的原始按鍵看起來是英文時，提供 Tab 直接上英文的提示。
+    /// 兩個訊號：命中英文詞典，或注音槽位被反覆覆寫（打英文的特徵）。
+    public var englishHint: String? {
+        let raw = composer.rawKeys
+        guard raw.count >= 3, raw.allSatisfy(\.isLetter) else { return nil }
+        if let detector = englishDetector, detector.isWord(raw) { return raw }
+        if raw.count >= 4, composer.overwriteCount >= 2 { return raw }
+        return nil
+    }
 
     // MARK: - 事件入口
 
@@ -112,7 +124,14 @@ public final class InputEngine {
             guard !elements.isEmpty else { return .ignored }
             if composer.isEmpty { openSheet() }  // 組字中不開候選窗
             return .consumed
-        case .arrowUp, .tab, .pageUp, .pageDown:
+        case .tab:
+            if let hint = englishHint {
+                composer.clear()
+                insertLiteral(hint)
+                return .consumed
+            }
+            return isIdle ? .ignored : .consumed
+        case .arrowUp, .pageUp, .pageDown:
             return isIdle ? .ignored : .consumed
         }
     }
@@ -176,6 +195,19 @@ public final class InputEngine {
         )
     }
 
+    /// 英文提示的候選窗呈現（單一項目、⇥ 標籤、不搶按鍵）
+    public func englishHintView() -> SheetView? {
+        guard sheet == nil, let hint = englishHint else { return nil }
+        let current = preedit()
+        return SheetView(
+            items: [SheetView.Item(label: "⇥", value: hint)],
+            highlightedInPage: -1,
+            pageIndex: 0,
+            pageCount: 1,
+            anchorUTF16: current.caretUTF16 - composer.display.utf16.count
+        )
+    }
+
     // MARK: - 字元與候選窗
 
     private func handleCharacter(_ ch: Character) -> Output {
@@ -187,6 +219,11 @@ public final class InputEngine {
             return .consumed
         case .rejected:
             if !composer.isEmpty { return .consumed }  // 打錯鍵不打斷組字
+            if fullWidthPunctuation, let punct = Punctuation.fullWidth(ch) {
+                if elements.isEmpty { return Output(handled: true, commitText: punct) }
+                insertLiteral(punct)
+                return .consumed
+            }
             if elements.isEmpty { return .ignored }
             // 組字區有內容時打到非注音鍵：先上屏，再讓按鍵原樣送給應用程式
             return Output(handled: false, commitText: flush())

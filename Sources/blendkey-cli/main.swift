@@ -20,6 +20,8 @@ if let text = try? String(contentsOfFile: dataPath, encoding: .utf8) {
 }
 
 let engine = InputEngine(lexicon: lexicon)
+engine.englishDetector = try? EnglishDetector(contentsOf: URL(fileURLWithPath: "/usr/share/dict/words"))
+print("英文偵測：\(engine.englishDetector == nil ? "無" : "有（Tab 接受提示）")")
 print("鍵入大千鍵序（例：su3cl3 → 你好）。控制鍵：< > [ ] ` \\ !　結束：Ctrl-D")
 
 while true {
@@ -35,6 +37,7 @@ while true {
         case "`": key = .backspace
         case "\\": key = .escape
         case "!": key = .enter
+        case "\t": key = .tab
         case " ": key = .space
         case let c where c.isUppercase: key = .englishLiteral(c)
         default: key = .character(ch)
@@ -48,7 +51,7 @@ while true {
     if !preedit.isEmpty {
         print("組字區：\(preedit.text)")
     }
-    if let sheet = engine.sheetView() {
+    if let sheet = engine.sheetView() ?? engine.englishHintView() {
         let items = sheet.items.enumerated().map { index, item in
             index == sheet.highlightedInPage ? "▶\(item.label).\(item.value)" : " \(item.label).\(item.value)"
         }

@@ -10,8 +10,10 @@ public struct SyllableComposer: Equatable, Sendable {
     private enum Slot: Equatable { case initial, medial, final }
 
     public private(set) var syllable = Syllable()
-    /// 已按下的原始按鍵（供 M3 英文自動偵測；含被覆寫的鍵）
+    /// 已按下的原始按鍵（供英文自動偵測；含被覆寫的鍵）
     public private(set) var rawKeys = ""
+    /// 同槽被覆寫的次數：注音打字幾乎不覆寫，連續覆寫多半是在打英文
+    public private(set) var overwriteCount = 0
     private var slotOrder: [Slot] = []
 
     public init() {}
@@ -62,11 +64,16 @@ public struct SyllableComposer: Equatable, Sendable {
         syllable = Syllable()
         slotOrder = []
         rawKeys = ""
+        overwriteCount = 0
     }
 
     private mutating func noteSlot(_ slot: Slot, key: Character) {
         // 覆寫同槽時保持原順位，避免 backspace 順序錯亂
-        if !slotOrder.contains(slot) { slotOrder.append(slot) }
+        if slotOrder.contains(slot) {
+            overwriteCount += 1
+        } else {
+            slotOrder.append(slot)
+        }
         rawKeys.append(key)
     }
 }
