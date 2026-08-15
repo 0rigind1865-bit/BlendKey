@@ -31,7 +31,8 @@ for p in rows("phrase.occ"):
     if len(p) >= 2 and p[1].isdigit():
         counts[p[0]] = max(counts.get(p[0], 0), int(p[1]))
 
-exclusions = {p[0] for p in rows("exclusion.txt")}
+# 注意：小麥的 exclusion.txt 是「語料計數修正表」（算 A 的次數時排除 B 裡的 A），
+# 不是詞的排除清單；phrase.occ 已是計數後的結果，這裡不需要它。
 
 # 破音字讀音權重（小麥 heterophony 表）：字的詞頻只該歸給常用讀音，
 # 否則「和」的超高詞頻會灌進罕用音 ㄏㄨㄛˋ，把「或」壓下去。
@@ -52,7 +53,7 @@ entries = {}  # (讀音, 詞) -> 出現次數
 # 詞條：BPMFMappings 每行「詞 音節…」
 for p in rows("BPMFMappings.txt"):
     word, syls = p[0], p[1:]
-    if not syls or word in exclusions:
+    if not syls:
         continue
     if len(word) != len(syls):  # 防呆：字數與音節數不符的列
         continue

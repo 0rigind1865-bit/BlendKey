@@ -10,7 +10,6 @@ for f in BPMFBase.txt BPMFMappings.txt phrase.occ heterophony1.list heterophony2
   [ -f ".lexicon-src/$f" ] || curl -fsSL "$RAW/Source/Data/$f" -o ".lexicon-src/$f"
 done
 # 非必要檔：抓不到不擋流程
-[ -f ".lexicon-src/exclusion.txt" ] || curl -fsSL "$RAW/Source/Data/exclusion.txt" -o ".lexicon-src/exclusion.txt" || true
 [ -f "Resources/data/LICENSE-McBopomofo.txt" ] || curl -fsSL "$RAW/LICENSE.txt" -o "Resources/data/LICENSE-McBopomofo.txt" || true
 
 python3 scripts/build-data.py
