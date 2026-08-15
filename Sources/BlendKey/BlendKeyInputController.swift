@@ -111,7 +111,7 @@ class BlendKeyInputController: IMKInputController {
         setMarked(engine.preedit(), client: client)
         if let sheet = engine.sheetView() {
             var lineRect = NSRect.zero
-            client.attributes(forCharacterIndex: 0, lineHeightRectangle: &lineRect)
+            client.attributes(forCharacterIndex: sheet.anchorUTF16, lineHeightRectangle: &lineRect)
             CandidatePanel.shared.present(
                 sheet, near: lineRect, clientLevel: client.windowLevel(), owner: self
             )

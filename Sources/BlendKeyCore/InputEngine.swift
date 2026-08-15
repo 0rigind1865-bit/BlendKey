@@ -38,6 +38,8 @@ public final class InputEngine {
         public let highlightedInPage: Int
         public let pageIndex: Int
         public let pageCount: Int
+        /// 正在改字的詞在組字區裡的起點（UTF-16），候選窗對齊這裡
+        public let anchorUTF16: Int
     }
 
     // MARK: - 狀態
@@ -108,7 +110,7 @@ public final class InputEngine {
             return .consumed
         case .arrowDown:
             guard !elements.isEmpty else { return .ignored }
-            openSheet()
+            if composer.isEmpty { openSheet() }  // 組字中不開候選窗
             return .consumed
         case .arrowUp, .tab, .pageUp, .pageDown:
             return isIdle ? .ignored : .consumed
@@ -163,11 +165,14 @@ public final class InputEngine {
         let items = sheet.all[range].enumerated().map { offset, segment in
             SheetView.Item(label: "\(offset + 1)", value: segment.value)
         }
+        let anchorUTF16 = elementTexts()[..<min(sheet.anchor, elements.count)]
+            .reduce(0) { $0 + $1.utf16.count }
         return SheetView(
             items: items,
             highlightedInPage: sheet.highlighted - page * pageSize,
             pageIndex: page,
-            pageCount: pageCount
+            pageCount: pageCount,
+            anchorUTF16: anchorUTF16
         )
     }
 
