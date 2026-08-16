@@ -36,8 +36,11 @@ public struct SentenceDecoder {
     public var extraUnigrams: ((String) -> [Unigram])?
     /// 未知讀音（詞庫查不到的單音節）的懲罰分數
     private let unknownPenalty = -17.0
-    /// ponytail: 每節點固定罰分，偏好長詞路徑；斷詞品質不夠再升級 bigram
-    private let nodePenalty = -0.5
+    /// 每節點固定罰分：偏好長詞路徑，補償 unigram 獨立性假設低估長詞的問題。
+    /// −2.0 由 blendkey-cli --eval 對 90 句自然語句掃描而得（80%→83%）。
+    /// ponytail: 從詞庫片語推的 char-bigram 實測會倒退（見 commit 說明），
+    /// 真要再進一步需要連續文本語料的詞對統計。
+    private let nodePenalty = -2.0
 
     public init(lexicon: Lexicon) {
         self.lexicon = lexicon

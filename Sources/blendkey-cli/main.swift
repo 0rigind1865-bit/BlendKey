@@ -4,7 +4,16 @@ import BlendKeyCore
 // blendkey-cli：組字管線 REPL——不安裝輸入法也能驗證整條管線。
 // 控制鍵對應：<=← >=→ [=↓ ]=↑ `=退格 \=Esc !=Enter 空白=空白鍵 大寫字母=直出英文
 
-let dataPath = CommandLine.arguments.dropFirst().first ?? "Resources/data/data.txt"
+var args = Array(CommandLine.arguments.dropFirst())
+
+// 評估模式：blendkey-cli --eval <tsv>（每行「讀音1-讀音2-…⇥預期句子」），量測組句正確率
+var evalPath: String?
+if let index = args.firstIndex(of: "--eval"), index + 1 < args.count {
+    evalPath = args[index + 1]
+    args.removeSubrange(index...(index + 1))
+}
+
+let dataPath = args.first ?? "Resources/data/data.txt"
 
 let lexicon: Lexicon
 if let text = try? String(contentsOfFile: dataPath, encoding: .utf8) {
@@ -17,6 +26,27 @@ if let text = try? String(contentsOfFile: dataPath, encoding: .utf8) {
     ㄋㄧˇ-ㄏㄠˇ 你好 -6.0
     """)
     print("找不到 \(dataPath)，改用內建示範詞庫（先跑 scripts/build-data.sh）")
+}
+
+if let evalPath {
+    let decoder = SentenceDecoder(lexicon: lexicon)
+    var sentenceHits = 0, total = 0, charHits = 0, charTotal = 0
+    for line in (try? String(contentsOfFile: evalPath, encoding: .utf8))?.split(separator: "\n") ?? [] {
+        let parts = line.split(separator: "\t")
+        guard parts.count == 2 else { continue }
+        let elements = parts[0].split(separator: "-").map { Element.reading(String($0)) }
+        let got = decoder.walk(elements).map(\.value).joined()
+        let want = String(parts[1])
+        total += 1
+        if got == want { sentenceHits += 1 } else { print("✗ \(want)　→　\(got)") }
+        charTotal += want.count
+        charHits += zip(got, want).count { $0 == $1 }
+    }
+    let sentenceRate = Double(sentenceHits) / Double(max(total, 1)) * 100
+    let charRate = Double(charHits) / Double(max(charTotal, 1)) * 100
+    print(String(format: "\n整句正確 %d/%d（%.0f%%）　單字正確率 %.1f%%",
+                 sentenceHits, total, sentenceRate, charRate))
+    exit(0)
 }
 
 let engine = InputEngine(lexicon: lexicon)
