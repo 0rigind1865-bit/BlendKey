@@ -80,36 +80,43 @@ private func makeChineseDetector() -> ChineseTypingDetector {
     return ChineseTypingDetector { 已知讀音.contains($0) }
 }
 
-private func feedAll(_ detector: inout ChineseTypingDetector, _ keys: String) -> Bool {
-    var fired = false
-    for key in keys where !fired {
+private func feedAll(_ detector: inout ChineseTypingDetector, _ keys: String) -> String? {
+    var fired: String?
+    for key in keys where fired == nil {
         fired = detector.feed(key)
     }
     return fired
 }
 
-@Test func 英文模式打注音兩音節即切回() {
+@Test func 英文模式打注音兩音節即切回並回報按鍵串() {
     var detector = makeChineseDetector()
-    #expect(feedAll(&detector, "su3cl3"))  // ㄋㄧˇ ㄏㄠˇ：零覆寫＋數字聲調
+    // ㄋㄧˇ ㄏㄠˇ：零覆寫＋數字聲調；回報整串按鍵供收回重組
+    #expect(feedAll(&detector, "su3cl3") == "su3cl3")
 }
 
 @Test func 英文句子不誤觸() {
     var detector = makeChineseDetector()
     // hello world：注音槽位大量覆寫，永遠組不出乾淨音節
-    #expect(!feedAll(&detector, "hello world this is a test "))
+    #expect(feedAll(&detector, "hello world this is a test ") == nil)
 }
 
 @Test func 零覆寫短英文因無數字聲調不誤觸() {
     var detector = makeChineseDetector()
     // "e " → ㄍ+一聲＝ㄍ（不在詞庫）；"el "→ㄍㄠ 在詞庫但無數字聲調，單次也不夠
-    #expect(!feedAll(&detector, "e el go no "))
+    #expect(feedAll(&detector, "e el go no ") == nil)
 }
 
 @Test func 被打斷就重新計數() {
     var detector = makeChineseDetector()
     _ = feedAll(&detector, "su3")   // 一個合法音節
     detector.reset()                 // 使用者按了方向鍵
-    #expect(!feedAll(&detector, "cl3"))  // 只剩一個音節，不觸發
+    #expect(feedAll(&detector, "cl3") == nil)  // 只剩一個音節，不觸發
+}
+
+@Test func 雜訊後的按鍵串只含乾淨音節() {
+    var detector = makeChineseDetector()
+    // 「xy 」是雜訊（有覆寫、組不出已知讀音），觸發時只回報後面乾淨的兩個音節
+    #expect(feedAll(&detector, "xy su3cl3") == "su3cl3")
 }
 
 // MARK: - 長按直出

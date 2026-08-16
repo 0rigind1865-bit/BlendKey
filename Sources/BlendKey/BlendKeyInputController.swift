@@ -85,9 +85,8 @@ class BlendKeyInputController: IMKInputController {
         Self.shiftDetector.noteKeyDown()
 
         guard Self.chineseMode else {
-            // 英文模式：全部放行，但觀察按鍵流——發現在打注音就自動切回中文
-            observeEnglishModeTyping(event, client: client)
-            return false
+            // 英文模式：放行但觀察——發現在打注音就切回中文並收回已打出的字母
+            return observeEnglishModeTyping(event, client: client)
         }
         guard let engine = ensureEngine() else { return false }  // 詞庫載入前放行
 
@@ -115,8 +114,9 @@ class BlendKeyInputController: IMKInputController {
         return output.handled
     }
 
-    /// 英文模式的旁路觀察：只看不攔。已上屏的英文不動，切回後從下一鍵開始組注音。
-    private func observeEnglishModeTyping(_ event: NSEvent, client: IMKTextInput) {
+    /// 英文模式的旁路觀察：放行並偵測。觸發時把已放行的注音字母收回、原地重組成中文。
+    /// 回傳 true 表示這個按鍵被吃掉（觸發鍵不再進文件）。
+    private func observeEnglishModeTyping(_ event: NSEvent, client: IMKTextInput) -> Bool {
         guard UserDefaults.standard.bool(forKey: SettingKey.englishHint),
               !event.modifierFlags.contains(.capsLock),  // 大寫鎖定＝刻意英文，不偵測
               event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
@@ -124,13 +124,37 @@ class BlendKeyInputController: IMKInputController {
               ch.isASCII, !ch.isNewline, ch == " " || ch.isLetter || ch.isNumber || ch.isPunctuation || ch.isSymbol
         else {
             Self.chineseDetector.reset()  // 快捷鍵、方向鍵等：打斷偵測節奏
-            return
+            return false
         }
-        if Self.chineseDetector.feed(Character(String(ch).lowercased())) {
-            Self.chineseMode = true
-            Log.general.info("反向偵測：切回中文模式")
-            ModeHUD.shared.flash(chinese: true, near: caretLineRect(client))
+        guard let keys = Self.chineseDetector.feed(Character(String(ch).lowercased())) else {
+            return false
         }
+
+        Self.chineseMode = true
+        ModeHUD.shared.flash(chinese: true, near: caretLineRect(client))
+
+        // 觸發鍵還沒進文件；文件裡是前面已放行的字母（keys 去掉最後一鍵）
+        let emitted = String(keys.dropLast())
+        let selection = client.selectedRange()
+        let documentRange = NSRange(location: selection.location - emitted.utf16.count,
+                                    length: emitted.utf16.count)
+        // 只有能「驗明正身」才收回：游標前的內容必須正是那串字母
+        // （防止使用者中途點過滑鼠移動游標，也排除不支援讀取的 client）
+        guard let engine = ensureEngine(),
+              selection.location != NSNotFound, selection.length == 0,
+              selection.location >= emitted.utf16.count,
+              client.attributedSubstring(from: documentRange)?.string == emitted
+        else {
+            Log.general.info("反向偵測：切回中文（無法驗證前置字母，不收回）")
+            return false  // 觸發鍵放行，維持原字母
+        }
+
+        Log.general.info("反向偵測：切回中文並收回 \(emitted.count + 1, privacy: .public) 個字母重組")
+        for key in keys {
+            _ = engine.handle(key == " " ? .space : .character(key))
+        }
+        setMarked(engine.preedit(), client: client, replacing: documentRange)
+        return true  // 觸發鍵由我們消化，不讓它再進文件
     }
 
     /// Shift 單擊切換中英。flagsChanged 在 NSMenu／開存檔對話框中收不到（平台限制）。
@@ -248,7 +272,11 @@ class BlendKeyInputController: IMKInputController {
         }
     }
 
-    private func setMarked(_ preedit: InputEngine.Preedit, client: IMKTextInput) {
+    private func setMarked(
+        _ preedit: InputEngine.Preedit,
+        client: IMKTextInput,
+        replacing documentRange: NSRange? = nil
+    ) {
         let attributed = NSMutableAttributedString()
         var location = 0
         for piece in preedit.pieces {
@@ -267,7 +295,7 @@ class BlendKeyInputController: IMKInputController {
         client.setMarkedText(
             attributed,
             selectionRange: NSRange(location: preedit.caretUTF16, length: 0),
-            replacementRange: kNoRange
+            replacementRange: documentRange ?? kNoRange
         )
     }
 }

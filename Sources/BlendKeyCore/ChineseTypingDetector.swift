@@ -9,35 +9,42 @@ public struct ChineseTypingDetector: Sendable {
     private var shadow = SyllableComposer()
     private var validStreak = 0
     private var sawDigitTone = false
+    private var pendingKeys = ""  // 進行中音節的按鍵
+    private var streakKeys = ""   // 已完成合法音節的按鍵串
     private let isKnownReading: @Sendable (String) -> Bool
 
     public init(isKnownReading: @escaping @Sendable (String) -> Bool) {
         self.isKnownReading = isKnownReading
     }
 
-    /// 餵一個可列印按鍵；回傳 true 表示「該切回中文了」（同時自我重置）
-    public mutating func feed(_ ch: Character) -> Bool {
+    /// 餵一個可列印按鍵。回傳非 nil＝該切回中文了，值是整串注音按鍵
+    /// （如 "su3cl3"，供殼層把已放行的字母收回重組）；同時自我重置。
+    public mutating func feed(_ ch: Character) -> String? {
         let overwritesBefore = shadow.overwriteCount
         switch shadow.press(ch) {
         case .absorbed:
-            return false
+            pendingKeys.append(ch)
+            return nil
         case .composed(let syllable):
-            let clean = overwritesBefore == 0 && isKnownReading(syllable.canonical)
-            guard clean else {
+            pendingKeys.append(ch)
+            guard overwritesBefore == 0, isKnownReading(syllable.canonical) else {
                 resetStreak()
-                return false
+                return nil
             }
+            streakKeys += pendingKeys
+            pendingKeys = ""
             validStreak += 1
             if syllable.tone != .tone1 { sawDigitTone = true }
             if validStreak >= 2 && sawDigitTone {
+                let keys = streakKeys
                 reset()
-                return true
+                return keys
             }
-            return false
+            return nil
         case .rejected:
             // 非注音鍵（標點、其他符號）：打斷節奏
             resetStreak()
-            return false
+            return nil
         }
     }
 
@@ -51,5 +58,7 @@ public struct ChineseTypingDetector: Sendable {
         shadow.clear()
         validStreak = 0
         sawDigitTone = false
+        pendingKeys = ""
+        streakKeys = ""
     }
 }
