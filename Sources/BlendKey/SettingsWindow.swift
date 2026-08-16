@@ -28,7 +28,7 @@ private struct SettingsView: View {
         Form {
             Section("中英混輸") {
                 Toggle("Shift 單擊切換中／英", isOn: $shiftToggle)
-                Toggle("自動偵測英文（Tab 上字）", isOn: $englishHint)
+                Toggle("中英自動偵測（中打英 Tab 上字；英打注音自動切回）", isOn: $englishHint)
                 Text("Shift＋字母永遠直接輸出英文字母。")
                     .font(.callout)
                     .foregroundStyle(.secondary)

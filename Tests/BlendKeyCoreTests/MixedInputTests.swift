@@ -73,6 +73,45 @@ private let 偵測器 = EnglishDetector(words: ["google", "hello", "OK"])
     _ = engine  // 引擎層由 rawKeys>=4 && 覆寫>=2 把關
 }
 
+// MARK: - 反向偵測（英文模式打注音）
+
+private func makeChineseDetector() -> ChineseTypingDetector {
+    let 已知讀音: Set<String> = ["ㄋㄧˇ", "ㄏㄠˇ", "ㄍㄠ", "ㄎㄠˇ"]
+    return ChineseTypingDetector { 已知讀音.contains($0) }
+}
+
+private func feedAll(_ detector: inout ChineseTypingDetector, _ keys: String) -> Bool {
+    var fired = false
+    for key in keys where !fired {
+        fired = detector.feed(key)
+    }
+    return fired
+}
+
+@Test func 英文模式打注音兩音節即切回() {
+    var detector = makeChineseDetector()
+    #expect(feedAll(&detector, "su3cl3"))  // ㄋㄧˇ ㄏㄠˇ：零覆寫＋數字聲調
+}
+
+@Test func 英文句子不誤觸() {
+    var detector = makeChineseDetector()
+    // hello world：注音槽位大量覆寫，永遠組不出乾淨音節
+    #expect(!feedAll(&detector, "hello world this is a test "))
+}
+
+@Test func 零覆寫短英文因無數字聲調不誤觸() {
+    var detector = makeChineseDetector()
+    // "e " → ㄍ+一聲＝ㄍ（不在詞庫）；"el "→ㄍㄠ 在詞庫但無數字聲調，單次也不夠
+    #expect(!feedAll(&detector, "e el go no "))
+}
+
+@Test func 被打斷就重新計數() {
+    var detector = makeChineseDetector()
+    _ = feedAll(&detector, "su3")   // 一個合法音節
+    detector.reset()                 // 使用者按了方向鍵
+    #expect(!feedAll(&detector, "cl3"))  // 只剩一個音節，不觸發
+}
+
 // MARK: - 長按直出
 
 @Test func 長按字母直出英文() {

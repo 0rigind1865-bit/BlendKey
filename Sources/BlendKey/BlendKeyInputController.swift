@@ -11,6 +11,10 @@ class BlendKeyInputController: IMKInputController {
     /// 中／英模式是整個輸入法共享的（跨應用程式一致）
     private static var chineseMode = true
     private static var shiftDetector = ShiftTapDetector()
+    /// 反向偵測：英文模式下發現在打注音就自動切回中文
+    private static var chineseDetector = ChineseTypingDetector { reading in
+        LexiconStore.lexicon?.unigrams(reading).isEmpty == false
+    }
     /// 使用者選字學習：全行程共用一份
     private static let userPhrases = UserPhraseStore(
         fileURL: FileManager.default
@@ -80,7 +84,11 @@ class BlendKeyInputController: IMKInputController {
         guard event.type == .keyDown else { return false }
         Self.shiftDetector.noteKeyDown()
 
-        guard Self.chineseMode else { return false }  // 英文模式：全部放行
+        guard Self.chineseMode else {
+            // 英文模式：全部放行，但觀察按鍵流——發現在打注音就自動切回中文
+            observeEnglishModeTyping(event, client: client)
+            return false
+        }
         guard let engine = ensureEngine() else { return false }  // 詞庫載入前放行
 
         // Caps Lock 亮：英數直通（所有按鍵放行，字母數字符號一致）
@@ -105,6 +113,24 @@ class BlendKeyInputController: IMKInputController {
         }
         syncUI(engine, client: client)
         return output.handled
+    }
+
+    /// 英文模式的旁路觀察：只看不攔。已上屏的英文不動，切回後從下一鍵開始組注音。
+    private func observeEnglishModeTyping(_ event: NSEvent, client: IMKTextInput) {
+        guard UserDefaults.standard.bool(forKey: SettingKey.englishHint),
+              !event.modifierFlags.contains(.capsLock),  // 大寫鎖定＝刻意英文，不偵測
+              event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
+              let chars = event.characters, chars.count == 1, let ch = chars.first,
+              ch.isASCII, !ch.isNewline, ch == " " || ch.isLetter || ch.isNumber || ch.isPunctuation || ch.isSymbol
+        else {
+            Self.chineseDetector.reset()  // 快捷鍵、方向鍵等：打斷偵測節奏
+            return
+        }
+        if Self.chineseDetector.feed(Character(String(ch).lowercased())) {
+            Self.chineseMode = true
+            Log.general.info("反向偵測：切回中文模式")
+            ModeHUD.shared.flash(chinese: true, near: caretLineRect(client))
+        }
     }
 
     /// Shift 單擊切換中英。flagsChanged 在 NSMenu／開存檔對話框中收不到（平台限制）。
