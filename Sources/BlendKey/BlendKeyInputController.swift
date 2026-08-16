@@ -15,6 +15,8 @@ class BlendKeyInputController: IMKInputController {
     private static var chineseDetector = ChineseTypingDetector { reading in
         LexiconStore.lexicon?.unigrams(reading).isEmpty == false
     }
+    /// 大寫燈亮著卻在打注音：當它沒亮，直到使用者自己切換大寫才恢復
+    private static var capsLockOverridden = false
     /// 使用者選字學習：全行程共用一份
     private static let userPhrases = UserPhraseStore(
         fileURL: FileManager.default
@@ -91,10 +93,11 @@ class BlendKeyInputController: IMKInputController {
         }
         guard let engine = ensureEngine() else { return false }  // 詞庫載入前放行
 
-        // Caps Lock 亮：英數直通（所有按鍵放行，字母數字符號一致）
-        if event.modifierFlags.contains(.capsLock) {
+        // Caps Lock 亮：英數直通。但仍觀察按鍵流——大寫燈很容易誤觸，
+        // 發現在打注音就當它沒亮（收回字母重組），直到使用者自己切換大寫。
+        if event.modifierFlags.contains(.capsLock), !Self.capsLockOverridden {
             flushBeforePassthrough(engine, client: client)
-            return false
+            return observeEnglishModeTyping(event, client: client)
         }
 
         // cmd／ctrl／opt 快捷鍵：先把組字區上屏，再放行給應用程式
@@ -119,7 +122,6 @@ class BlendKeyInputController: IMKInputController {
     /// 回傳 true 表示這個按鍵被吃掉（觸發鍵不再進文件）。
     private func observeEnglishModeTyping(_ event: NSEvent, client: IMKTextInput) -> Bool {
         guard UserDefaults.standard.bool(forKey: SettingKey.englishHint),
-              !event.modifierFlags.contains(.capsLock),  // 大寫鎖定＝刻意英文，不偵測
               event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
               let chars = event.characters, chars.count == 1, let ch = chars.first,
               ch.isASCII, !ch.isNewline, ch == " " || ch.isLetter || ch.isNumber || ch.isPunctuation || ch.isSymbol
@@ -131,7 +133,12 @@ class BlendKeyInputController: IMKInputController {
             return false
         }
 
-        Self.chineseMode = true
+        // 大寫燈亮時是「當它沒亮」；否則是整體切回中文模式
+        if event.modifierFlags.contains(.capsLock) {
+            Self.capsLockOverridden = true
+        } else {
+            Self.chineseMode = true
+        }
         ModeHUD.shared.flash(chinese: true, near: caretLineRect(client))
 
         // 觸發鍵還沒進文件；文件裡是前面已放行的字母（keys 去掉最後一鍵）
@@ -141,10 +148,11 @@ class BlendKeyInputController: IMKInputController {
                                     length: emitted.utf16.count)
         // 只有能「驗明正身」才收回：游標前的內容必須正是那串字母
         // （防止使用者中途點過滑鼠移動游標，也排除不支援讀取的 client）
+        // 大寫模式放行的是大寫字母，偵測器回報的是小寫鍵序，故不分大小寫比對
         guard let engine = ensureEngine(),
               selection.location != NSNotFound, selection.length == 0,
               selection.location >= emitted.utf16.count,
-              client.attributedSubstring(from: documentRange)?.string == emitted
+              client.attributedSubstring(from: documentRange)?.string.lowercased() == emitted.lowercased()
         else {
             Log.general.info("反向偵測：切回中文（無法驗證前置字母，不收回）")
             return false  // 觸發鍵放行，維持原字母
@@ -163,6 +171,8 @@ class BlendKeyInputController: IMKInputController {
         // Caps Lock 切換：亮＝英數直通模式（比照內建注音的習慣）
         if event.keyCode == UInt16(kVK_CapsLock) {
             let capsOn = event.modifierFlags.contains(.capsLock)
+            Self.capsLockOverridden = false  // 使用者自己切換，恢復尊重大寫燈
+            Self.chineseDetector.reset()
             if capsOn, let engine, let text = engine.flush() {
                 client.insertText(text, replacementRange: kNoRange)
             }

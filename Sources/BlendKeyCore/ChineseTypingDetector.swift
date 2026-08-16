@@ -11,6 +11,8 @@ public struct ChineseTypingDetector: Sendable {
     private var sawDigitTone = false
     private var pendingKeys = ""  // 進行中音節的按鍵
     private var streakKeys = ""   // 已完成合法音節的按鍵串
+    /// 累積過久沒湊滿條件就重來，避免長篇英文慢慢累積成誤判
+    private let maxPendingKeys = 12
     private let isKnownReading: @Sendable (String) -> Bool
 
     public init(isKnownReading: @escaping @Sendable (String) -> Bool) {
@@ -24,10 +26,14 @@ public struct ChineseTypingDetector: Sendable {
         switch shadow.press(ch) {
         case .absorbed:
             pendingKeys.append(ch)
+            if pendingKeys.count > maxPendingKeys { resetStreak() }  // 一個音節不該按這麼多鍵
             return nil
         case .composed(let syllable):
             pendingKeys.append(ch)
-            guard overwritesBefore == 0, isKnownReading(syllable.canonical) else {
+            // 打字途中改鍵很常見，覆寫本身不算雜訊；把關交給
+            // 「音節查得到詞」＋「串中要有數字聲調」——英文兩關都過不了
+            _ = overwritesBefore
+            guard isKnownReading(syllable.canonical) else {
                 resetStreak()
                 return nil
             }

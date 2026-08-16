@@ -100,6 +100,35 @@ private func feedAll(_ detector: inout ChineseTypingDetector, _ keys: String) ->
     #expect(feedAll(&detector, "hello world this is a test ") == nil)
 }
 
+@Test func 大寫燈誤觸時的真實案例會被抓到() {
+    // 使用者回報：大寫燈亮著打注音，跑出「WJ OBJ/4」
+    // W=ㄊ J=ㄨ 空白=一聲　O=ㄟ B=ㄖ J=ㄨ /=ㄥ 4=ˋ（中間有槽位覆寫）
+    var detector = ChineseTypingDetector { ["ㄊㄨ", "ㄖㄨㄥˋ"].contains($0) }
+    #expect(feedAll(&detector, "wj obj/4") != nil)
+}
+
+@Test func 打字中改鍵不影響偵測() {
+    var detector = makeChineseDetector()
+    // ㄋㄧˇ 打成 ㄇㄧˇ 再改回來（聲母覆寫），仍應判定為注音
+    #expect(feedAll(&detector, "asu3cl3") != nil)
+}
+
+@Test func 英文語料不誤觸() {
+    let sentences = [
+        "hello world this is a test ", "please send me the file tomorrow ",
+        "the quick brown fox jumps over the lazy dog ",
+        "let me know if you need anything else ",
+        "version 3 of the config file is ready ",   // 含數字
+        "meeting at 4 pm in room 302 ",             // 含數字
+        "git commit and push to main branch ",
+        "npm install then run build ",
+    ]
+    for sentence in sentences {
+        var detector = makeChineseDetector()
+        #expect(feedAll(&detector, sentence) == nil, "英文誤判：\(sentence)")
+    }
+}
+
 @Test func 零覆寫短英文因無數字聲調不誤觸() {
     var detector = makeChineseDetector()
     // "e " → ㄍ+一聲＝ㄍ（不在詞庫）；"el "→ㄍㄠ 在詞庫但無數字聲調，單次也不夠
