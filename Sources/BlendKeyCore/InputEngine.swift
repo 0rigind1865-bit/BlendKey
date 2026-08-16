@@ -95,9 +95,13 @@ public final class InputEngine {
                 decoder.extraUnigrams = { [weak store] reading in
                     store?.userWords(reading: reading) ?? []
                 }
+                decoder.transitionBonus = { [weak store] previous, next in
+                    store?.transitionBonus(from: previous, to: next) ?? 0
+                }
             } else {
                 decoder.scoreBonus = nil
                 decoder.extraUnigrams = nil
+                decoder.transitionBonus = nil
             }
             rewalk()
         }
@@ -209,6 +213,10 @@ public final class InputEngine {
     /// 失焦／換行時把組字區內容送出
     public func flush() -> String? {
         learnPinnedWords()
+        // 上屏的詞序列＝真實連續文本語料，記下詞對供下次斷詞參考
+        if composer.isEmpty, walked.count >= 2 {
+            userPhrases?.noteCommit(walked.map(\.value))
+        }
         let text = committedText()
         reset()
         return text.isEmpty ? nil : text

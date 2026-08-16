@@ -10,7 +10,8 @@
 ## 特色
 
 - **智慧整句組句**——連續打注音自動組詞成句（詞圖＋動態規劃），游標移回可改字，改過的字會被記住（使用者詞庫學習）
-- **自動造詞**——同一串音節連續兩次被你改字後上屏（例如兩次都改出「融鍵」），自動學成使用者新詞，之後整個詞一次組出來；學習資料在 `~/Library/Application Support/BlendKey/userphrases.json`，刪掉即重置
+- **自動造詞**——同一串音節連續兩次被你改字後上屏（例如兩次都改出「融鍵」），自動學成使用者新詞，之後整個詞一次組出來
+- **越用越準**——每次上屏都會記下「詞與詞的接續習慣」，形成專屬於你的語料。同一句話打第一次之後正確率就從 80% 升到 87%，打過三次達 96%；沒學過的句子完全不受影響（只獎勵你真的打過的組合）。學習資料只存本機 `~/Library/Application Support/BlendKey/userphrases.json`，偏好設定裡可一鍵清除
 - **Shift 單擊切換中／英**——Windows 新注音使用者零學習成本；切換時游標旁閃現「中／A」提示
 - **Shift＋字母直出英文＋接續段**——Shift+G 之後小寫字母原樣接續（`Google`、`iPhone15`、`test.com v2` 都一氣呵成，空白標點皆半形），再單擊 Shift／Esc 回中文組字；長按字母開頭則是小寫英文段（`google`）；按著 Shift 不放就是全大寫（`USB`）
 - **英文自動偵測＋中英並列選字**——直接打 `google`，輸入法發現「這串不像注音」（命中英文詞典，或注音鍵位被反覆覆寫）跳出提示；按**空白**開並列候選 `1.google 2.Google 3.GOOGLE 4.高`（英文三種大小寫與一聲中文字同窗，數字直選），按 **Tab** 快速上小寫，按 Esc 關窗繼續打注音
@@ -52,9 +53,12 @@ scripts/install.sh      # 建置、打包、安裝到 ~/Library/Input Methods
 ## 開發
 
 ```bash
-swift test               # 37 個核心單元測試（組字、斷詞、混輸、學習）
+swift test               # 63 個核心單元測試（組字、斷詞、混輸、學習）
 swift run blendkey-cli   # REPL：不安裝也能玩整條組字管線
 log stream --level debug --predicate 'subsystem == "org.blendkey.inputmethod.BlendKey"'
+
+# 組句品質量測（90 句自然語句；--train 可模擬「使用者打過這些內容」）
+swift run -c release blendkey-cli --eval Tests/Fixtures/sentences.tsv
 ```
 
 架構：`BlendKeyCore`（純邏輯，零 AppKit 依賴，全部可測）＋ `BlendKey`（InputMethodKit 殼層）。

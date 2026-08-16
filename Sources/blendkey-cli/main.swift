@@ -7,10 +7,14 @@ import BlendKeyCore
 var args = Array(CommandLine.arguments.dropFirst())
 
 // 評估模式：blendkey-cli --eval <tsv>（每行「讀音1-讀音2-…⇥預期句子」），量測組句正確率
+// 可加 --train <tsv>：先把該檔的句子當作使用者打過的內容學進去，再評估
 var evalPath: String?
-if let index = args.firstIndex(of: "--eval"), index + 1 < args.count {
-    evalPath = args[index + 1]
-    args.removeSubrange(index...(index + 1))
+var trainPath: String?
+for flag in ["--eval", "--train"] {
+    if let index = args.firstIndex(of: flag), index + 1 < args.count {
+        if flag == "--eval" { evalPath = args[index + 1] } else { trainPath = args[index + 1] }
+        args.removeSubrange(index...(index + 1))
+    }
 }
 
 let dataPath = args.first ?? "Resources/data/data.txt"
@@ -28,8 +32,44 @@ if let text = try? String(contentsOfFile: dataPath, encoding: .utf8) {
     print("找不到 \(dataPath)，改用內建示範詞庫（先跑 scripts/build-data.sh）")
 }
 
+func rows(_ path: String) -> [(readings: [String], expected: String)] {
+    ((try? String(contentsOfFile: path, encoding: .utf8))?.split(separator: "\n") ?? []).compactMap {
+        let parts = $0.split(separator: "\t")
+        guard parts.count == 2 else { return nil }
+        return (parts[0].split(separator: "-").map(String.init), String(parts[1]))
+    }
+}
+
 if let evalPath {
-    let decoder = SentenceDecoder(lexicon: lexicon)
+    var decoder = SentenceDecoder(lexicon: lexicon)
+
+    // 訓練：把句子的正確斷詞當作「使用者打過並上屏」餵進學習庫
+    if let trainPath {
+        let store = UserPhraseStore(fileURL: nil)
+        let plain = SentenceDecoder(lexicon: lexicon)
+        for row in rows(trainPath) {
+            let elements = row.readings.map { Element.reading($0) }
+            // 以正確答案為準：用該句的實際斷詞（先解一次拿到詞邊界，再校正為預期字）
+            let segments = plain.walk(elements)
+            var words: [String] = []
+            var index = 0
+            for segment in segments {
+                let end = min(index + segment.length, row.expected.count)
+                let start = row.expected.index(row.expected.startIndex, offsetBy: index)
+                words.append(String(row.expected[start..<row.expected.index(row.expected.startIndex, offsetBy: end)]))
+                index = end
+            }
+            store.noteCommit(words)
+        }
+        decoder.transitionBonus = { [store] previous, next in
+            store.transitionBonus(from: previous, to: next)
+        }
+        if let weight = ProcessInfo.processInfo.environment["BK_TRANS_WEIGHT"].flatMap(Double.init) {
+            decoder.transitionWeight = weight
+        }
+        print("訓練：\(rows(trainPath).count) 句 → \(store.transitionCount) 組詞對")
+    }
+
     var sentenceHits = 0, total = 0, charHits = 0, charTotal = 0
     for line in (try? String(contentsOfFile: evalPath, encoding: .utf8))?.split(separator: "\n") ?? [] {
         let parts = line.split(separator: "\t")

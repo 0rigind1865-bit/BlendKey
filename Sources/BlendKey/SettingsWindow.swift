@@ -23,6 +23,11 @@ private struct SettingsView: View {
     @AppStorage(SettingKey.englishHint) private var englishHint = true
     @AppStorage(SettingKey.fullWidthPunctuation) private var fullWidthPunctuation = true
     @AppStorage(SettingKey.pageSize) private var pageSize = 9
+    @State private var showingResetAlert = false
+    @State private var didReset = false
+
+    /// 由控制器注入：清除學習資料
+    var onReset: () -> Void = {}
 
     var body: some View {
         Form {
@@ -41,6 +46,17 @@ private struct SettingsView: View {
                 }
                 .pickerStyle(.segmented)
             }
+            Section("學習資料") {
+                Text("融鍵會記住你選過的字、自動學成新詞，並記錄詞與詞的接續習慣，讓斷詞越用越準。資料只存在本機（Application Support），不會離開這台電腦。")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                HStack {
+                    Button("清除全部學習資料", role: .destructive) { showingResetAlert = true }
+                    if didReset {
+                        Text("已清除").font(.callout).foregroundStyle(.secondary)
+                    }
+                }
+            }
             Section {
                 Text("設定即時生效。詞庫：小麥注音（MIT）；英文詞表：macOS 內建。")
                     .font(.callout)
@@ -50,6 +66,15 @@ private struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 380)
         .fixedSize()
+        .alert("清除全部學習資料？", isPresented: $showingResetAlert) {
+            Button("取消", role: .cancel) {}
+            Button("清除", role: .destructive) {
+                onReset()
+                didReset = true
+            }
+        } message: {
+            Text("選字紀錄、自動學成的新詞、詞語接續習慣都會刪除，無法復原。內建詞庫不受影響。")
+        }
     }
 }
 
@@ -57,10 +82,12 @@ private struct SettingsView: View {
 final class SettingsWindowController {
     static let shared = SettingsWindowController()
     private var window: NSWindow?
+    /// 由控制器設定：清除學習資料
+    var onReset: () -> Void = {}
 
     func show() {
         if window == nil {
-            let hosting = NSHostingController(rootView: SettingsView())
+            let hosting = NSHostingController(rootView: SettingsView(onReset: onReset))
             let window = NSWindow(contentViewController: hosting)
             window.title = "融鍵偏好設定"
             window.styleMask = [.titled, .closable]

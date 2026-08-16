@@ -34,6 +34,13 @@ public struct SentenceDecoder {
     public var scoreBonus: ((String, String) -> Double)?
     /// 使用者自造詞：讀音 → 額外候選（與內建詞庫合流）
     public var extraUnigrams: ((String) -> [Unigram])?
+    /// 使用者語料的詞對加分：(前詞, 後詞) → 加分（沒打過就 0）
+    public var transitionBonus: ((String, String) -> Double)?
+    /// 詞對加分的權重：2.0 由 --eval --train 掃描而得
+    /// （同句打 1 次 87%、3 次 96%；未學過的句子完全不受影響）
+    public var transitionWeight = 2.0
+    /// 每個跨距取幾個候選進詞圖：>1 才讓上下文有選擇餘地
+    public var candidateDepth = 4
     /// 未知讀音（詞庫查不到的單音節）的懲罰分數
     private let unknownPenalty = -17.0
     /// 每節點固定罰分：偏好長詞路徑，補償 unigram 獨立性假設低估長詞的問題。
@@ -68,13 +75,19 @@ public struct SentenceDecoder {
         return Array(best.values)
     }
 
+    /// 詞圖上的一個狀態：以某位置結尾的節點，及走到它的最佳分數與回溯指標
+    private struct State {
+        let segment: DecodedSegment
+        let score: Double
+        let prevIndex: Int  // states[segment.start] 的索引；-1 代表句首
+    }
+
+    /// Viterbi：逐節點保留狀態，轉移時加上使用者語料的詞對加分
     public func walk(_ elements: [Element], pins: [DecodedSegment] = []) -> [DecodedSegment] {
         let n = elements.count
         guard n > 0 else { return [] }
 
-        var best = [Double](repeating: -.infinity, count: n + 1)
-        var back = [DecodedSegment?](repeating: nil, count: n + 1)
-        best[0] = 0
+        var states = [[State]](repeating: [], count: n + 1)
 
         func conflictsWithPin(start: Int, end: Int) -> Bool {
             pins.contains { pin in
@@ -85,22 +98,41 @@ public struct SentenceDecoder {
         for end in 1...n {
             let earliest = max(0, end - searchSpan)
             for start in earliest..<end {
+                guard start == 0 || !states[start].isEmpty else { continue }
                 guard !conflictsWithPin(start: start, end: end) else { continue }
                 for node in nodes(elements, start: start, end: end, pins: pins) {
-                    let score = best[start] + node.score + nodePenalty
-                    if score > best[end] {
-                        best[end] = score
-                        back[end] = node.segment
+                    let base = node.score + nodePenalty
+                    if start == 0 {
+                        states[end].append(State(segment: node.segment, score: base, prevIndex: -1))
+                        continue
+                    }
+                    var bestScore = -Double.infinity
+                    var bestPrev = -1
+                    for (index, previous) in states[start].enumerated() {
+                        let bonus = transitionBonus.map {
+                            transitionWeight * $0(previous.segment.value, node.segment.value)
+                        } ?? 0
+                        let score = previous.score + base + bonus
+                        if score > bestScore {
+                            bestScore = score
+                            bestPrev = index
+                        }
+                    }
+                    if bestPrev >= 0 {
+                        states[end].append(State(segment: node.segment, score: bestScore, prevIndex: bestPrev))
                     }
                 }
             }
         }
 
         var result: [DecodedSegment] = []
-        var cursor = n
-        while cursor > 0, let segment = back[cursor] {
-            result.append(segment)
-            cursor = segment.start
+        var position = n
+        var index = states[n].enumerated().max { $0.element.score < $1.element.score }?.offset ?? -1
+        while position > 0, index >= 0 {
+            let state = states[position][index]
+            result.append(state.segment)
+            position = state.segment.start
+            index = state.prevIndex
         }
         return result.reversed()
     }
@@ -135,11 +167,17 @@ public struct SentenceDecoder {
         }
         guard let reading = joinedReading(elements, start: start, end: end) else { return [] }
         let unigrams = allUnigrams(reading)
-        if let top = unigrams.max(by: { adjusted($0, reading: reading) < adjusted($1, reading: reading) }) {
-            return [Node(
-                segment: DecodedSegment(start: start, length: length, value: top.value, reading: reading),
-                score: adjusted(top, reading: reading)
-            )]
+        if !unigrams.isEmpty {
+            // 取前 K 名進詞圖：只留第一名的話，詞對加分沒有可選的對象
+            let ranked = unigrams
+                .sorted { adjusted($0, reading: reading) > adjusted($1, reading: reading) }
+                .prefix(max(1, candidateDepth))
+            return ranked.map { unigram in
+                Node(
+                    segment: DecodedSegment(start: start, length: length, value: unigram.value, reading: reading),
+                    score: adjusted(unigram, reading: reading)
+                )
+            }
         }
         if length == 1 {
             // 詞庫沒有的讀音：原樣顯示注音，重罰但仍可通行

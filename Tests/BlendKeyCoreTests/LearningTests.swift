@@ -95,6 +95,62 @@ private func 打擬界並上屏(_ store: UserPhraseStore) -> String? {
     #expect(reloaded.userWords(reading: "ㄋㄧˇ-ㄐㄧㄝˋ").map(\.value) == ["擬界"])
 }
 
+// MARK: - 連續文本語料（詞對）
+
+@Test func 上屏的詞序列被記為詞對() {
+    let store = UserPhraseStore(fileURL: nil)
+    store.noteCommit(["是", "妳", "好"])
+    #expect(store.transitionBonus(from: "是", to: "妳") > 0)
+    #expect(store.transitionBonus(from: "妳", to: "好") > 0)
+    #expect(store.transitionBonus(from: "是", to: "好") == 0)  // 不相鄰
+    #expect(store.transitionBonus(from: "沒", to: "打過") == 0)
+}
+
+@Test func 詞對次數越多加分越高() {
+    let store = UserPhraseStore(fileURL: nil)
+    store.noteCommit(["是", "妳"])
+    let once = store.transitionBonus(from: "是", to: "妳")
+    store.noteCommit(["是", "妳"])
+    #expect(store.transitionBonus(from: "是", to: "妳") > once)
+}
+
+@Test func 改過的字下次靠上下文自動出現() {
+    let store = UserPhraseStore(fileURL: nil)
+    // 第一次：預設組出「是你」，使用者改成「妳」後上屏
+    let first = InputEngine(lexicon: 測試詞庫)
+    first.userPhrases = store
+    for key in "g4su3" { _ = first.handle(.character(key)) }  // ㄕˋ ㄋㄧˇ
+    #expect(first.preedit().text == "是你")
+    _ = first.handle(.arrowLeft)
+    _ = first.handle(.arrowDown)
+    選字(first, "妳")
+    #expect(first.handle(.enter).commitText == "是妳")
+
+    // 第二次：同樣的注音，這次不用改就是「妳」
+    let second = InputEngine(lexicon: 測試詞庫)
+    second.userPhrases = store
+    for key in "g4su3" { _ = second.handle(.character(key)) }
+    #expect(second.preedit().text == "是妳")
+}
+
+@Test func 未學過的組合完全不受影響() {
+    let store = UserPhraseStore(fileURL: nil)
+    store.noteCommit(["世界", "是", "妳"])  // 學了不相干的內容
+    let engine = InputEngine(lexicon: 測試詞庫)
+    engine.userPhrases = store
+    for key in "su3cl3" { _ = engine.handle(.character(key)) }
+    #expect(engine.preedit().text == "你好")  // 原本的結果不變
+}
+
+@Test func 清除學習資料() {
+    let store = UserPhraseStore(fileURL: nil)
+    store.noteCommit(["是", "妳"])
+    store.bump(reading: "ㄋㄧˇ", value: "妳")
+    store.reset()
+    #expect(store.transitionBonus(from: "是", to: "妳") == 0)
+    #expect(store.bonus(reading: "ㄋㄧˇ", value: "妳") == 0)
+}
+
 @Test func 學習權重可存檔重載() throws {
     let url = FileManager.default.temporaryDirectory
         .appendingPathComponent("blendkey-test-\(UInt32.random(in: 0..<UInt32.max)).json")

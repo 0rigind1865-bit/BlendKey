@@ -52,6 +52,7 @@ class BlendKeyInputController: IMKInputController {
 
     /// IMK 內建的偏好設定進入點，換成自己的 SwiftUI 視窗
     override func showPreferences(_ sender: Any!) {
+        SettingsWindowController.shared.onReset = { Self.userPhrases.reset() }
         SettingsWindowController.shared.show()
     }
 

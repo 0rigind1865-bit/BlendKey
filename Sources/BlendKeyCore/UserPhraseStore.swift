@@ -10,6 +10,7 @@ public final class UserPhraseStore {
         var selections: [String: [String: Int]] = [:]    // 讀音 → 詞 → 選字次數
         var pendingWords: [String: [String: Int]] = [:]  // 造詞候補（出現 1 次）
         var words: [String: [String: Int]] = [:]         // 已升格的使用者詞
+        var transitions: [String: [String: Int]] = [:]   // 前詞 → 後詞 → 次數（連續文本語料）
     }
 
     private var data = StoredData()
@@ -17,6 +18,8 @@ public final class UserPhraseStore {
     /// ponytail: 使用者詞固定分數 -8（約當常用詞），穩贏單字拆解路徑；不夠再改動態
     private let userWordScore = -8.0
     private let promotionThreshold = 2
+    /// ponytail: 詞對上限 20,000，超過就丟掉只出現一次的；不夠再改 LRU
+    private let transitionLimit = 20_000
 
     /// - Parameter fileURL: nil 表示純記憶體（測試、CLI 用）
     public init(fileURL: URL?) {
@@ -64,6 +67,45 @@ public final class UserPhraseStore {
     /// 這個讀音底下已學成的使用者詞
     public func userWords(reading: String) -> [Unigram] {
         (data.words[reading] ?? [:]).keys.map { Unigram(value: $0, score: userWordScore) }
+    }
+
+    // MARK: - 連續文本語料（詞對）
+
+    /// 上屏時記錄實際的詞序列：這是真正的連續文本語料，
+    /// 與詞庫片語表不同——它含有真實的詞邊界，正是斷詞需要的上下文。
+    /// 全程僅存在本機、只記詞對次數不留原句。
+    public func noteCommit(_ words: [String]) {
+        guard words.count >= 2 else { return }
+        for (previous, next) in zip(words, words.dropFirst()) where !previous.isEmpty && !next.isEmpty {
+            data.transitions[previous, default: [:]][next, default: 0] += 1
+        }
+        pruneTransitionsIfNeeded()
+        save()
+    }
+
+    /// 「前詞之後接這個詞」的加分：只獎勵使用者真的打過的組合，
+    /// 沒看過就回 0（退回純 unigram），所以不會像 PMI 那樣獎勵罕見雜訊。
+    public func transitionBonus(from previous: String, to next: String) -> Double {
+        guard let count = data.transitions[previous]?[next], count > 0 else { return 0 }
+        return Foundation.log(1.0 + Double(count))
+    }
+
+    public var transitionCount: Int {
+        data.transitions.values.reduce(0) { $0 + $1.count }
+    }
+
+    /// 清除全部學習資料（偏好設定用）
+    public func reset() {
+        data = StoredData()
+        save()
+    }
+
+    private func pruneTransitionsIfNeeded() {
+        guard transitionCount > transitionLimit else { return }
+        for (previous, nexts) in data.transitions {
+            let kept = nexts.filter { $0.value > 1 }
+            data.transitions[previous] = kept.isEmpty ? nil : kept
+        }
     }
 
     private func save() {
