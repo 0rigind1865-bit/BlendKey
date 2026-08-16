@@ -94,6 +94,45 @@ public final class UserPhraseStore {
         data.transitions.values.reduce(0) { $0 + $1.count }
     }
 
+    // MARK: - 檢視與逐筆管理
+
+    /// 一筆學習紀錄（供檢視視窗顯示）
+    public struct Entry: Identifiable, Sendable {
+        public enum Kind: String, Sendable, CaseIterable {
+            case selection = "選字紀錄"
+            case word = "自動造詞"
+            case transition = "詞語接續"
+        }
+        public let kind: Kind
+        public let key: String    // 讀音（選字／造詞）或前詞（接續）
+        public let value: String  // 選的字詞或後詞
+        public let count: Int
+        public var id: String { "\(kind.rawValue)\t\(key)\t\(value)" }
+    }
+
+    public func entries(_ kind: Entry.Kind) -> [Entry] {
+        let source: [String: [String: Int]]
+        switch kind {
+        case .selection: source = data.selections
+        case .word: source = data.words
+        case .transition: source = data.transitions
+        }
+        return source
+            .flatMap { key, values in
+                values.map { Entry(kind: kind, key: key, value: $0.key, count: $0.value) }
+            }
+            .sorted { $0.count != $1.count ? $0.count > $1.count : $0.key < $1.key }
+    }
+
+    public func remove(_ entry: Entry) {
+        switch entry.kind {
+        case .selection: data.selections[entry.key]?[entry.value] = nil
+        case .word: data.words[entry.key]?[entry.value] = nil
+        case .transition: data.transitions[entry.key]?[entry.value] = nil
+        }
+        save()
+    }
+
     /// 清除全部學習資料（偏好設定用）
     public func reset() {
         data = StoredData()

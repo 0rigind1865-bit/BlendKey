@@ -26,8 +26,9 @@ private struct SettingsView: View {
     @State private var showingResetAlert = false
     @State private var didReset = false
 
-    /// 由控制器注入：清除學習資料
+    /// 由控制器注入：清除學習資料、開啟學習資料視窗
     var onReset: () -> Void = {}
+    var onShowLearnedData: () -> Void = {}
 
     var body: some View {
         Form {
@@ -51,7 +52,8 @@ private struct SettingsView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 HStack {
-                    Button("清除全部學習資料", role: .destructive) { showingResetAlert = true }
+                    Button("檢視學習資料…") { onShowLearnedData() }
+                    Button("清除全部", role: .destructive) { showingResetAlert = true }
                     if didReset {
                         Text("已清除").font(.callout).foregroundStyle(.secondary)
                     }
@@ -82,12 +84,14 @@ private struct SettingsView: View {
 final class SettingsWindowController {
     static let shared = SettingsWindowController()
     private var window: NSWindow?
-    /// 由控制器設定：清除學習資料
+    /// 由控制器設定：清除學習資料、開啟學習資料視窗
     var onReset: () -> Void = {}
+    var onShowLearnedData: () -> Void = {}
 
     func show() {
         if window == nil {
-            let hosting = NSHostingController(rootView: SettingsView(onReset: onReset))
+            let hosting = NSHostingController(
+                rootView: SettingsView(onReset: onReset, onShowLearnedData: onShowLearnedData))
             let window = NSWindow(contentViewController: hosting)
             window.title = "融鍵偏好設定"
             window.styleMask = [.titled, .closable]

@@ -17,6 +17,8 @@ class BlendKeyInputController: IMKInputController {
     }
     /// 大寫燈亮著卻在打注音：當它沒亮，直到使用者自己切換大寫才恢復
     private static var capsLockOverridden = false
+    /// 這段放行字母在文件裡的起點（用位置算術驗證，不需 app 支援讀取內容）
+    private static var passthroughAnchor: Int?
     /// 使用者選字學習：全行程共用一份
     private static let userPhrases = UserPhraseStore(
         fileURL: FileManager.default
@@ -46,15 +48,32 @@ class BlendKeyInputController: IMKInputController {
         mode.isEnabled = false
         menu.addItem(mode)
         menu.addItem(.separator())
-        let preferences = NSMenuItem(title: "偏好設定…", action: #selector(showPreferences(_:)), keyEquivalent: "")
-        preferences.target = self
-        menu.addItem(preferences)
+        for (title, action) in [
+            ("操作說明…", #selector(showGuide(_:))),
+            ("學習資料…", #selector(showLearnedData(_:))),
+            ("偏好設定…", #selector(showPreferences(_:))),
+        ] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
         return menu
+    }
+
+    @objc private func showGuide(_ sender: Any?) {
+        GuideWindowController.shared.show()
+    }
+
+    @objc private func showLearnedData(_ sender: Any?) {
+        LearnedDataWindowController.shared.show(store: Self.userPhrases)
     }
 
     /// IMK 內建的偏好設定進入點，換成自己的 SwiftUI 視窗
     override func showPreferences(_ sender: Any!) {
         SettingsWindowController.shared.onReset = { Self.userPhrases.reset() }
+        SettingsWindowController.shared.onShowLearnedData = {
+            LearnedDataWindowController.shared.show(store: Self.userPhrases)
+        }
         SettingsWindowController.shared.show()
     }
 
@@ -127,7 +146,13 @@ class BlendKeyInputController: IMKInputController {
               ch.isASCII, !ch.isNewline, ch == " " || ch.isLetter || ch.isNumber || ch.isPunctuation || ch.isSymbol
         else {
             Self.chineseDetector.reset()  // 快捷鍵、方向鍵等：打斷偵測節奏
+            Self.passthroughAnchor = nil
             return false
+        }
+        // 新一段的起點：記下這個字母插入前的游標位置
+        if !Self.chineseDetector.isTracking {
+            let location = client.selectedRange().location
+            Self.passthroughAnchor = location == NSNotFound ? nil : location
         }
         guard let keys = Self.chineseDetector.feed(Character(String(ch).lowercased())) else {
             return false
@@ -143,22 +168,31 @@ class BlendKeyInputController: IMKInputController {
 
         // 觸發鍵還沒進文件；文件裡是前面已放行的字母（keys 去掉最後一鍵）
         let emitted = String(keys.dropLast())
+        let length = emitted.utf16.count
         let selection = client.selectedRange()
-        let documentRange = NSRange(location: selection.location - emitted.utf16.count,
-                                    length: emitted.utf16.count)
-        // 只有能「驗明正身」才收回：游標前的內容必須正是那串字母
-        // （防止使用者中途點過滑鼠移動游標，也排除不支援讀取的 client）
-        // 大寫模式放行的是大寫字母，偵測器回報的是小寫鍵序，故不分大小寫比對
+        let documentRange = NSRange(location: selection.location - length, length: length)
+
+        // 驗證這段字母確實還完整躺在游標前面（使用者可能中途移動過游標）。
+        // 位置算術是主要依據——幾乎所有 app 都支援 selectedRange；
+        // 內容比對只在 app 願意提供時當作額外確認（大小寫不計，大寫模式放行的是大寫）。
+        let anchorMatches = Self.passthroughAnchor.map { $0 + length == selection.location } ?? false
+        let content = client.attributedSubstring(from: documentRange)?.string
+        let contentMatches = content.map { $0.lowercased() == emitted.lowercased() }
+
         guard let engine = ensureEngine(),
               selection.location != NSNotFound, selection.length == 0,
-              selection.location >= emitted.utf16.count,
-              client.attributedSubstring(from: documentRange)?.string.lowercased() == emitted.lowercased()
+              selection.location >= length,
+              contentMatches ?? anchorMatches   // 讀得到就以內容為準，讀不到才信位置
         else {
-            Log.general.info("反向偵測：切回中文（無法驗證前置字母，不收回）")
+            let anchorText = Self.passthroughAnchor.map(String.init) ?? "無"
+            let detail = "游標 \(selection.location)、需 \(length) 字、起點 \(anchorText)、內容 \(content ?? "讀不到")"
+            Log.general.error("反向偵測：切回中文但無法收回字母（\(detail, privacy: .public)）")
+            Self.passthroughAnchor = nil
             return false  // 觸發鍵放行，維持原字母
         }
 
         Log.general.info("反向偵測：切回中文並收回 \(emitted.count + 1, privacy: .public) 個字母重組")
+        Self.passthroughAnchor = nil
         for key in keys {
             _ = engine.handle(key == " " ? .space : .character(key))
         }

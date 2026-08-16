@@ -54,6 +54,9 @@ public struct ChineseTypingDetector: Sendable {
         }
     }
 
+    /// 是否正在追蹤一段可能的注音（供殼層決定何時記錄文件起點）
+    public var isTracking: Bool { !(pendingKeys.isEmpty && streakKeys.isEmpty) }
+
     /// 任何非打字事件（方向鍵、退格、切換視窗…）都該打斷偵測
     public mutating func reset() {
         shadow.clear()
