@@ -203,6 +203,38 @@ private func run(_ detector: inout ShiftTapDetector, _ events: [(ShiftTapDetecto
     #expect(!run(&detector, [(.shiftDown(keyCode: 56), 0), (.allReleased(keyCode: 60), 0.1)]))
 }
 
+// MARK: - 中英並列選字
+
+@Test func 空白開中英並列選字_數字直選大小寫() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    engine.englishDetector = 偵測器
+    for key in "google" { _ = engine.handle(.character(key)) }
+    _ = engine.handle(.space)  // 不組一聲字，改開並列選字
+    #expect(engine.sheetView()?.items.map(\.value) == ["google", "Google", "GOOGLE", "高"])
+    _ = engine.handle(.character("2"))
+    #expect(engine.preedit().text == "Google")
+    #expect(engine.handle(.enter).commitText == "Google")
+}
+
+@Test func 並列選字也能選一聲中文字() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    engine.englishDetector = 偵測器
+    for key in "google" { _ = engine.handle(.character(key)) }  // 組字中恰為 ㄍㄠ
+    _ = engine.handle(.space)
+    _ = engine.handle(.character("4"))  // 最後一項＝一聲字「高」
+    #expect(engine.preedit().text == "高")
+}
+
+@Test func 並列選字Esc關窗保留注音續打() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    engine.englishDetector = 偵測器
+    for key in "google" { _ = engine.handle(.character(key)) }
+    _ = engine.handle(.space)
+    _ = engine.handle(.escape)
+    #expect(engine.sheetView() == nil)          // 窗已關
+    #expect(engine.englishHint == "google")     // 注音與提示都還在
+}
+
 // MARK: - 英文接續段（大小寫混排）
 
 @Test func Shift字母開段_小寫接續_混合大小寫() {

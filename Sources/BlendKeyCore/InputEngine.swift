@@ -44,6 +44,7 @@ public final class InputEngine {
 
     // MARK: - 狀態
 
+    private let lexicon: Lexicon
     private var decoder: SentenceDecoder
     /// 候選字窗每頁字數（偏好設定）
     public var pageSize = 9
@@ -65,6 +66,18 @@ public final class InputEngine {
     /// 英文接續段：Shift+字母或長按開啟後，後續按鍵原樣直出（大小寫、數字、
     /// 半形標點、空白），直到 Shift 單擊／Esc／方向鍵／上屏結束
     public private(set) var isInLiteralRun = false
+
+    /// 中英並列選字：組字中偵測到英文時按空白／↓ 開啟，
+    /// 英文大小寫變體與一聲中文字並列，數字直選
+    private enum BilingualChoice: Equatable {
+        case english(String)
+        case tone1(display: String)
+    }
+    private struct BilingualSheet {
+        var choices: [BilingualChoice]
+        var highlighted = 0
+    }
+    private var bilingual: BilingualSheet?
 
     /// 全形標點開關（偏好設定）
     public var fullWidthPunctuation = true
@@ -91,6 +104,7 @@ public final class InputEngine {
     }
 
     public init(lexicon: Lexicon) {
+        self.lexicon = lexicon
         decoder = SentenceDecoder(lexicon: lexicon)
     }
 
@@ -111,6 +125,9 @@ public final class InputEngine {
 
     public func handle(_ key: KeyInput) -> Output {
         if case .repeatedCharacter = key {} else { longPressKey = nil }
+        if bilingual != nil, let output = handleInBilingual(key) {
+            return output
+        }
         if sheet != nil, let output = handleInSheet(key) {
             return output
         }
@@ -132,7 +149,11 @@ public final class InputEngine {
             return .consumed
         case .space:
             if isInLiteralRun { insertLiteral(" "); return .consumed }
-            if !composer.isEmpty { return handleCharacter(" ") }
+            if !composer.isEmpty {
+                // 偵測到英文：空白改開中英並列選字，不硬組一聲字
+                if englishHint != nil { openBilingualSheet(); return .consumed }
+                return handleCharacter(" ")
+            }
             if !elements.isEmpty { openSheet(); return .consumed }
             return .ignored
         case .enter:
@@ -166,8 +187,12 @@ public final class InputEngine {
             return .consumed
         case .arrowDown:
             isInLiteralRun = false
+            if !composer.isEmpty {
+                if englishHint != nil { openBilingualSheet() }  // 組字中只開中英並列
+                return elements.isEmpty && englishHint == nil ? .ignored : .consumed
+            }
             guard !elements.isEmpty else { return .ignored }
-            if composer.isEmpty { openSheet() }  // 組字中不開候選窗
+            openSheet()
             return .consumed
         case .tab:
             if let hint = englishHint {
@@ -249,6 +274,24 @@ public final class InputEngine {
     }
 
     public func sheetView() -> SheetView? {
+        if let bilingual {
+            let items = bilingual.choices.enumerated().map { offset, choice in
+                let value: String
+                switch choice {
+                case .english(let text): value = text
+                case .tone1(let display): value = display
+                }
+                return SheetView.Item(label: "\(offset + 1)", value: value)
+            }
+            let current = preedit()
+            return SheetView(
+                items: items,
+                highlightedInPage: bilingual.highlighted,
+                pageIndex: 0,
+                pageCount: 1,
+                anchorUTF16: current.caretUTF16 - composer.display.utf16.count
+            )
+        }
         guard let sheet, !sheet.all.isEmpty else { return nil }
         let pageCount = (sheet.all.count + pageSize - 1) / pageSize
         let page = sheet.highlighted / pageSize
@@ -269,7 +312,7 @@ public final class InputEngine {
 
     /// 英文提示的候選窗呈現（單一項目、⇥ 標籤、不搶按鍵）
     public func englishHintView() -> SheetView? {
-        guard sheet == nil, let hint = englishHint else { return nil }
+        guard sheet == nil, bilingual == nil, let hint = englishHint else { return nil }
         let current = preedit()
         return SheetView(
             items: [SheetView.Item(label: "⇥", value: hint)],
@@ -370,6 +413,73 @@ public final class InputEngine {
         }
     }
 
+    // MARK: - 中英並列選字
+
+    private func openBilingualSheet() {
+        guard let raw = englishHint else { return }
+        var choices: [BilingualChoice] = []
+        var seen = Set<String>()
+        for variant in [raw, raw.prefix(1).uppercased() + raw.dropFirst(), raw.uppercased()]
+        where seen.insert(variant).inserted {
+            choices.append(.english(variant))
+        }
+        // 一聲中文字並列：使用者按空白原本想要的那個字
+        var syllable = composer.syllable
+        syllable.tone = .tone1
+        let tone1Display = lexicon.unigrams(syllable.canonical).first?.value ?? syllable.display
+        choices.append(.tone1(display: tone1Display))
+        bilingual = BilingualSheet(choices: choices)
+    }
+
+    private func handleInBilingual(_ key: KeyInput) -> Output? {
+        guard var current = bilingual else { return nil }
+        switch key {
+        case .character(let ch):
+            if let digit = ch.wholeNumberValue, (1...current.choices.count).contains(digit) {
+                selectBilingual(current.choices[digit - 1])
+                return .consumed
+            }
+            bilingual = nil  // 繼續打字：關窗、照常組字
+            return nil
+        case .space, .arrowDown:
+            current.highlighted = (current.highlighted + 1) % current.choices.count
+            bilingual = current
+            return .consumed
+        case .arrowUp:
+            current.highlighted = (current.highlighted - 1 + current.choices.count) % current.choices.count
+            bilingual = current
+            return .consumed
+        case .enter:
+            selectBilingual(current.choices[current.highlighted])
+            return .consumed
+        case .tab:
+            // Tab 維持快速上英文：選反白項，反白在一聲字上則取第一個英文
+            if case .tone1 = current.choices[current.highlighted] {
+                selectBilingual(current.choices[0])
+            } else {
+                selectBilingual(current.choices[current.highlighted])
+            }
+            return .consumed
+        case .escape:
+            bilingual = nil  // 收窗、保留組字中的注音
+            return .consumed
+        default:
+            bilingual = nil
+            return nil
+        }
+    }
+
+    private func selectBilingual(_ choice: BilingualChoice) {
+        bilingual = nil
+        switch choice {
+        case .english(let text):
+            composer.clear()
+            insertLiteral(text)
+        case .tone1:
+            _ = handleCharacter(" ")  // 照原本的空白行為組一聲字
+        }
+    }
+
     private func openSheet() {
         guard let anchor = anchorSegment() else { return }
         let all = decoder.candidateSegments(elements, start: anchor.start)
@@ -447,6 +557,7 @@ public final class InputEngine {
         walked = []
         composer.clear()
         sheet = nil
+        bilingual = nil
         isInLiteralRun = false
     }
 
