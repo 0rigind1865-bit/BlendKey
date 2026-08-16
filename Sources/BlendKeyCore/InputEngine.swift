@@ -62,6 +62,9 @@ public final class InputEngine {
     private var sheet: Sheet?
     /// 已由長按轉成直出的鍵：吞掉它後續的自動重複
     private var longPressKey: Character?
+    /// 英文接續段：Shift+字母或長按開啟後，後續按鍵原樣直出（大小寫、數字、
+    /// 半形標點、空白），直到 Shift 單擊／Esc／方向鍵／上屏結束
+    public private(set) var isInLiteralRun = false
 
     /// 全形標點開關（偏好設定）
     public var fullWidthPunctuation = true
@@ -113,20 +116,29 @@ public final class InputEngine {
         }
         switch key {
         case .character(let ch):
+            if isInLiteralRun { insertLiteral(String(ch)); return .consumed }
             return handleCharacter(ch)
         case .repeatedCharacter(let ch):
+            if isInLiteralRun {
+                if longPressKey == ch { return .consumed }  // 長按轉換後的殘餘重複仍要吞
+                insertLiteral(String(ch))  // 段中按住新鍵＝真的要連打（如 aaa）
+                return .consumed
+            }
             return handleLongPress(ch)
         case .englishLiteral(let ch):
             composer.clear()
             insertLiteral(String(ch))
+            isInLiteralRun = true  // 開始英文接續段：後續小寫字母原樣直出
             return .consumed
         case .space:
+            if isInLiteralRun { insertLiteral(" "); return .consumed }
             if !composer.isEmpty { return handleCharacter(" ") }
             if !elements.isEmpty { openSheet(); return .consumed }
             return .ignored
         case .enter:
             return flushOutput()
         case .escape:
+            if isInLiteralRun { isInLiteralRun = false; return .consumed }
             if !composer.isEmpty { composer.clear(); return .consumed }
             if !elements.isEmpty { reset(); return .consumed }
             return .ignored
@@ -137,16 +149,23 @@ public final class InputEngine {
             }
             guard cursor > 0 else { return elements.isEmpty ? .ignored : .consumed }
             removeElement(at: cursor - 1)
+            // 接續段的字母全被退光就自動結束，回到注音組字
+            if isInLiteralRun, cursor == 0 || !isLiteral(at: cursor - 1) {
+                isInLiteralRun = false
+            }
             return .consumed
         case .arrowLeft:
+            isInLiteralRun = false
             guard !isIdle else { return .ignored }
             if composer.isEmpty { cursor = max(0, cursor - 1) }
             return .consumed
         case .arrowRight:
+            isInLiteralRun = false
             guard !isIdle else { return .ignored }
             if composer.isEmpty { cursor = min(elements.count, cursor + 1) }
             return .consumed
         case .arrowDown:
+            isInLiteralRun = false
             guard !elements.isEmpty else { return .ignored }
             if composer.isEmpty { openSheet() }  // 組字中不開候選窗
             return .consumed
@@ -263,7 +282,8 @@ public final class InputEngine {
 
     // MARK: - 字元與候選窗
 
-    /// 長按（自動重複）：把剛被吃成注音組件的鍵退掉、改為直出原始字元。
+    /// 長按（自動重複）：把剛被吃成注音組件的鍵退掉、改為直出原始字元，
+    /// 並開始英文接續段（長按開頭＝要打小寫英文）。
     /// 聲調鍵除外（按下當下音節已完成，undo 語意混亂，且空組字區時聲調鍵本來就放行）。
     private func handleLongPress(_ ch: Character) -> Output {
         if longPressKey == ch { return .consumed }  // 已轉換，吞掉後續重複
@@ -273,6 +293,7 @@ public final class InputEngine {
             _ = composer.backspace()
             insertLiteral(String(ch))
             longPressKey = ch
+            if ch.isLetter { isInLiteralRun = true }  // 數字長按維持單發
             return .consumed
         }
         return isIdle ? .ignored : .consumed
@@ -408,6 +429,17 @@ public final class InputEngine {
         walked = decoder.walk(elements, pins: pins)
     }
 
+    /// 結束英文接續段（Shift 單擊時由殼層呼叫）
+    public func endLiteralRun() {
+        isInLiteralRun = false
+    }
+
+    private func isLiteral(at index: Int) -> Bool {
+        guard elements.indices.contains(index) else { return false }
+        if case .literal = elements[index] { return true }
+        return false
+    }
+
     private func reset() {
         elements = []
         cursor = 0
@@ -415,6 +447,7 @@ public final class InputEngine {
         walked = []
         composer.clear()
         sheet = nil
+        isInLiteralRun = false
     }
 
     private func flushOutput() -> Output {

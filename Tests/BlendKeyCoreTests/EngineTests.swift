@@ -97,6 +97,7 @@ private func type(_ engine: InputEngine, _ keys: String) {
     type(engine, "su3")
     _ = engine.handle(.englishLiteral("O"))
     _ = engine.handle(.englishLiteral("K"))
+    engine.endLiteralRun()  // Shift 單擊結束英文接續段
     type(engine, "cl3")
     #expect(engine.preedit().text == "你OK好")
     #expect(engine.handle(.enter).commitText == "你OK好")

@@ -185,6 +185,13 @@ class BlendKeyInputController: IMKInputController {
         }
         guard Self.shiftDetector.process(flagsEvent, at: event.timestamp) else { return }
 
+        // 英文接續段進行中：Shift 單擊＝結束該段回中文組字，不切整體模式
+        if let engine, engine.isInLiteralRun {
+            engine.endLiteralRun()
+            ModeHUD.shared.flash(chinese: true, near: caretLineRect(client))
+            return
+        }
+
         Self.chineseMode.toggle()
         Log.general.info("切換模式：\(Self.chineseMode ? "中文" : "英文", privacy: .public)")
         if !Self.chineseMode, let engine {

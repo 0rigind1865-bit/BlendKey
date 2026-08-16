@@ -124,10 +124,11 @@ private func feedAll(_ detector: inout ChineseTypingDetector, _ keys: String) ->
 @Test func 長按字母直出英文() {
     let engine = InputEngine(lexicon: 測試詞庫)
     _ = engine.handle(.character("g"))          // 吃成 ㄕ
-    _ = engine.handle(.repeatedCharacter("g"))  // 長按：退掉 ㄕ、改直出 g
+    _ = engine.handle(.repeatedCharacter("g"))  // 長按：退掉 ㄕ、改直出 g（開接續段）
     #expect(engine.preedit().text == "g")
     _ = engine.handle(.repeatedCharacter("g"))  // 後續重複吞掉，不會 ggg
     #expect(engine.preedit().text == "g")
+    engine.endLiteralRun()                      // Shift 單擊結束接續段
     for key in "su3" { _ = engine.handle(.character(key)) }
     #expect(engine.handle(.enter).commitText == "g你")
 }
@@ -200,4 +201,48 @@ private func run(_ detector: inout ShiftTapDetector, _ events: [(ShiftTapDetecto
 @Test func 左右Shift不混淆() {
     var detector = ShiftTapDetector()
     #expect(!run(&detector, [(.shiftDown(keyCode: 56), 0), (.allReleased(keyCode: 60), 0.1)]))
+}
+
+// MARK: - 英文接續段（大小寫混排）
+
+@Test func Shift字母開段_小寫接續_混合大小寫() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    _ = engine.handle(.englishLiteral("G"))          // Shift+G 開段
+    for key in "oogle" { _ = engine.handle(.character(key)) }
+    #expect(engine.preedit().text == "Google")
+    engine.endLiteralRun()                            // Shift 單擊結束
+    for key in "su3" { _ = engine.handle(.character(key)) }
+    #expect(engine.handle(.enter).commitText == "Google你")
+}
+
+@Test func 接續段中空白與標點原樣半形() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    _ = engine.handle(.englishLiteral("T"))
+    for key in "est.com v2" { _ = engine.handle(key == " " ? .space : .character(key)) }
+    #expect(engine.preedit().text == "Test.com v2")  // 點與空白都是半形原樣
+}
+
+@Test func 長按字母也開接續段() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    _ = engine.handle(.character("g"))
+    _ = engine.handle(.repeatedCharacter("g"))       // 長按 → literal g、開段
+    for key in "oogle" { _ = engine.handle(.character(key)) }
+    #expect(engine.preedit().text == "google")
+}
+
+@Test func Esc結束接續段後注音恢復() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    _ = engine.handle(.englishLiteral("A"))
+    _ = engine.handle(.escape)                        // 結束段（字母保留）
+    for key in "su3" { _ = engine.handle(.character(key)) }
+    #expect(engine.preedit().text == "A你")
+}
+
+@Test func 退光接續段字母自動回注音() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    _ = engine.handle(.englishLiteral("G"))
+    _ = engine.handle(.backspace)                     // 唯一的字母退掉
+    #expect(engine.isInLiteralRun == false)
+    for key in "su3" { _ = engine.handle(.character(key)) }
+    #expect(engine.preedit().text == "你")
 }
