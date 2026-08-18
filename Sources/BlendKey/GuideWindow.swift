@@ -14,7 +14,7 @@ private struct GuideView: View {
         Shortcut(keys: "注音鍵", detail: "照大千（標準）鍵盤打，打完聲調就成一個字"),
         Shortcut(keys: "空白", detail: "組字中＝一聲；已有字＝打開候選字窗"),
         Shortcut(keys: "↑ ↓", detail: "候選字窗中上下選字（↓ 也可打開候選）"),
-        Shortcut(keys: "← →", detail: "移動游標回去改字或插字；游標在句中時會顯示 | 標出插入位置"),
+        Shortcut(keys: "← →", detail: "移動游標回去改字或插字；游標在句中時會顯示 ‸ 標出插入位置"),
         Shortcut(keys: "1 – 9", detail: "直接選候選字"),
         Shortcut(keys: "Enter", detail: "把組好的字送出"),
         Shortcut(keys: "Esc", detail: "清掉組字中的內容／關閉候選字窗"),

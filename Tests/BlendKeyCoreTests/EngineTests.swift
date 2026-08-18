@@ -119,9 +119,9 @@ private func type(_ engine: InputEngine, _ keys: String) {
     type(engine, "su3cl3")  // 你好
     #expect(!engine.preedit().text.contains(InputEngine.caretMark), "句尾不該畫記號")
     _ = engine.handle(.arrowLeft)
-    #expect(engine.preedit().text == "你|好", "句中要看得見插入點")
+    #expect(engine.preedit().text == "你‸好", "句中要看得見插入點")
     _ = engine.handle(.arrowLeft)
-    #expect(engine.preedit().text == "|你好", "句首也要看得見")
+    #expect(engine.preedit().text == "‸你好", "句首也要看得見")
 }
 
 @Test func 插入記號不會被送出() {
