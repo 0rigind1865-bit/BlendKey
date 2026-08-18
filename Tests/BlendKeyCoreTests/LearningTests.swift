@@ -121,8 +121,7 @@ private func 打擬界並上屏(_ store: UserPhraseStore) -> String? {
     first.userPhrases = store
     for key in "g4su3" { _ = first.handle(.character(key)) }  // ㄕˋ ㄋㄧˇ
     #expect(first.preedit().text == "是你")
-    _ = first.handle(.arrowLeft)
-    _ = first.handle(.arrowDown)
+    _ = first.handle(.arrowDown)  // 游標在句尾＝指向剛打的「你」，直接開它的候選
     選字(first, "妳")
     #expect(first.handle(.enter).commitText == "是妳")
 

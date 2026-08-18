@@ -102,3 +102,14 @@ private func type(_ engine: InputEngine, _ keys: String) {
     #expect(engine.preedit().text == "你OK好")
     #expect(engine.handle(.enter).commitText == "你OK好")
 }
+
+@Test func 詞內移動游標也看得見反白變化() {
+    // 「你好」是同一個詞：先前反白框整個詞，游標在詞內移動時完全沒變化
+    let engine = makeEngine()
+    type(engine, "su3cl3")
+    let atEnd = engine.preedit().activeRangeUTF16
+    _ = engine.handle(.arrowLeft)
+    let moved = engine.preedit().activeRangeUTF16
+    #expect(atEnd?.length == 1, "反白應只框一個字，不是整個詞")
+    #expect(atEnd?.start != moved?.start, "詞內移動游標，反白位置要跟著變")
+}

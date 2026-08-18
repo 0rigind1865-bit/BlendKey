@@ -347,12 +347,14 @@ public final class InputEngine {
         }
         // 游標所在詞的反白範圍：只在沒有組字中的注音時提供，
         // 這樣使用者用方向鍵回頭改字時看得見自己停在哪個詞
+        // 反白「游標所在的那個字」而非整個詞：先前框整個詞，導致在多字詞
+        // 內移動游標時畫面完全沒變化，使用者看不出游標在哪。
         var activeRange: (start: Int, length: Int)?
-        if composer.isEmpty, let active {
+        if composer.isEmpty, !elements.isEmpty {
+            let index = max(0, min(cursor - 1, elements.count - 1))
             let texts = elementTexts()
-            let start = texts[..<min(active.start, texts.count)].reduce(0) { $0 + $1.utf16.count }
-            let width = texts[min(active.start, texts.count)..<min(active.end, texts.count)]
-                .reduce(0) { $0 + $1.utf16.count }
+            let start = texts[..<index].reduce(0) { $0 + $1.utf16.count }
+            let width = texts[index].utf16.count
             if width > 0 { activeRange = (start: start, length: width) }
         }
         return Preedit(pieces: pieces, caretUTF16: caret, activeRangeUTF16: activeRange)
@@ -647,7 +649,7 @@ public final class InputEngine {
             userPhrases?.bump(reading: reading, value: segment.value)
         }
         rewalk()
-        cursor = min(segment.end, elements.count)
+        cursor = min(segment.end + 1, elements.count)  // 指向下一個字（游標＝其右邊）
         sheet = nil
     }
 
@@ -744,7 +746,7 @@ public final class InputEngine {
     /// 游標所在的詞段（按 ↓ 開候選的對象）
     private func anchorSegment() -> DecodedSegment? {
         guard !elements.isEmpty else { return nil }
-        let index = min(cursor, elements.count - 1)
+        let index = max(0, min(cursor - 1, elements.count - 1))
         return walked.first { $0.start <= index && index < $0.end }
     }
 }
