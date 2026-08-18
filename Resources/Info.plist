@@ -4,6 +4,8 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>BlendKey</string>
 	<key>CFBundleExecutable</key>
 	<string>BlendKey</string>
 	<key>CFBundleIdentifier</key>
@@ -12,35 +14,33 @@
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>BlendKey</string>
-	<key>CFBundleDisplayName</key>
-	<string>BlendKey</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.0</string>
+	<string>0.2.0</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
-	<key>LSMinimumSystemVersion</key>
-	<string>14.0</string>
-	<key>LSUIElement</key>
-	<true/>
-	<key>UIDesignRequiresCompatibility</key>
-	<true/>
-	<key>NSPrincipalClass</key>
-	<string>NSApplication</string>
+	<string>2</string>
 	<key>InputMethodConnectionName</key>
 	<string>org.blendkey.inputmethod.BlendKey_Connection</string>
 	<key>InputMethodServerControllerClass</key>
 	<string>BlendKeyInputController</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2026 jielin — MIT License；詞庫源自小麥注音（MIT）</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>TISIconIsTemplate</key>
+	<true/>
+	<key>UIDesignRequiresCompatibility</key>
+	<true/>
 	<key>tsInputMethodCharacterRepertoireKey</key>
 	<array>
 		<string>Hant</string>
 	</array>
 	<key>tsInputMethodIconFileKey</key>
 	<string>BlendKey.tiff</string>
-	<key>TISIconIsTemplate</key>
-	<true/>
-	<key>NSHumanReadableCopyright</key>
-	<string>© 2026 jielin — MIT License；詞庫源自小麥注音（MIT）</string>
 </dict>
 </plist>
