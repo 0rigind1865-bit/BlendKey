@@ -158,37 +158,44 @@ class BlendKeyInputController: IMKInputController {
             return false
         }
 
-        // 大寫燈亮時是「當它沒亮」；否則是整體切回中文模式
+        // 觸發後一律回中文組字；大寫燈亮就再疊加「當它沒亮」。
+        // 兩者是獨立狀態——英文模式＋大寫燈同時成立時，只解其中一個
+        // 會讓下一鍵仍被放行，把剛組出的中文蓋掉（使用者實測踩到的疊加 bug）。
         if event.modifierFlags.contains(.capsLock) {
             Self.capsLockOverridden = true
-        } else {
-            Self.chineseMode = true
         }
+        Self.chineseMode = true
         ModeHUD.shared.flash(chinese: true, near: caretLineRect(client))
 
         // 觸發鍵還沒進文件；文件裡是前面已放行的字母（keys 去掉最後一鍵）
         let emitted = String(keys.dropLast())
         let length = emitted.utf16.count
         let selection = client.selectedRange()
-        let documentRange = NSRange(location: selection.location - length, length: length)
+
+        // 先驗證游標合法，才能安全計算範圍（NSNotFound 相減會溢位，
+        // 拿溢位範圍去 attributedSubstring 在嚴格的 app 會丟例外）
+        guard let engine = ensureEngine(),
+              selection.location != NSNotFound, selection.length == 0,
+              selection.location >= length
+        else {
+            Log.general.error("反向偵測：切回中文但游標狀態不明（\(selection.location)），不收回")
+            Self.passthroughAnchor = nil
+            return false  // 觸發鍵放行，維持原字母
+        }
 
         // 驗證這段字母確實還完整躺在游標前面（使用者可能中途移動過游標）。
-        // 位置算術是主要依據——幾乎所有 app 都支援 selectedRange；
-        // 內容比對只在 app 願意提供時當作額外確認（大小寫不計，大寫模式放行的是大寫）。
+        // 內容比對優先（大小寫不計，大寫模式放行的是大寫）；app 不給讀才信位置算術。
+        let documentRange = NSRange(location: selection.location - length, length: length)
         let anchorMatches = Self.passthroughAnchor.map { $0 + length == selection.location } ?? false
         let content = client.attributedSubstring(from: documentRange)?.string
         let contentMatches = content.map { $0.lowercased() == emitted.lowercased() }
 
-        guard let engine = ensureEngine(),
-              selection.location != NSNotFound, selection.length == 0,
-              selection.location >= length,
-              contentMatches ?? anchorMatches   // 讀得到就以內容為準，讀不到才信位置
-        else {
+        guard contentMatches ?? anchorMatches else {
             let anchorText = Self.passthroughAnchor.map(String.init) ?? "無"
             let detail = "游標 \(selection.location)、需 \(length) 字、起點 \(anchorText)、內容 \(content ?? "讀不到")"
             Log.general.error("反向偵測：切回中文但無法收回字母（\(detail, privacy: .public)）")
             Self.passthroughAnchor = nil
-            return false  // 觸發鍵放行，維持原字母
+            return false
         }
 
         Log.general.info("反向偵測：切回中文並收回 \(emitted.count + 1, privacy: .public) 個字母重組")
