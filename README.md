@@ -57,9 +57,7 @@ scripts/make-release.sh # 打包可散布的 zip（含安裝腳本）
 | ←→ | 移動游標（改字用）；窗內＝翻頁 |
 | 1–9 | 選候選 |
 | Caps Lock | 亮＝英數直通模式；但若在此狀態下打注音，會自動判定並切回中文 |
-
-輸入法選單（選單列的融鍵圖示）提供：**操作說明**、**學習資料**（可逐筆檢視與刪除）、**偏好設定**。
-| Tab | 接受英文偵測提示 |
+| Tab | 接受英文／數字偵測提示（打 `1.62` 按 Tab 出數字；直接 Enter 也可） |
 | 長按字母／數字鍵 | 直接輸出該字元（英文字母、數字），不當注音 |
 | Enter | 上屏 |
 | Esc | 清組字／關候選窗 |
@@ -67,10 +65,12 @@ scripts/make-release.sh # 打包可散布的 zip（含安裝腳本）
 | Shift＋字母 | 開英文接續段（首字母大寫；後續小寫原樣，空白標點半形） |
 | 接續段中單擊 Shift／Esc | 結束英文段，回注音組字 |
 
+輸入法選單（選單列的融鍵圖示）提供：**操作說明**、**學習資料**（可逐筆檢視與刪除）、**偏好設定**。
+
 ## 開發
 
 ```bash
-swift test               # 63 個核心單元測試（組字、斷詞、混輸、學習）
+swift test               # 72 個核心單元測試（組字、斷詞、混輸、學習）
 swift run blendkey-cli   # REPL：不安裝也能玩整條組字管線
 log stream --level debug --predicate 'subsystem == "org.blendkey.inputmethod.BlendKey"'
 
@@ -84,7 +84,7 @@ swift run -c release blendkey-cli --eval Tests/Fixtures/sentences.tsv
 ## 已知限制
 
 - NSMenu 與開／存檔對話框中收不到 flagsChanged，Shift 切換暫時失靈（平台限制）
-- 斷詞用 unigram＋長詞偏好，罕見句型可能要手動改字（升級路徑：bigram）
+- 斷詞用 unigram＋長詞偏好＋使用者詞對學習；沒打過的罕見句型可能要手動改字一次
 - 選單列圖示不隨中英模式變化（HUD 已涵蓋；輸入模式架構會逼出第二次登出，不划算）
 
 ## 授權

@@ -307,3 +307,48 @@ private func run(_ detector: inout ShiftTapDetector, _ events: [(ShiftTapDetecto
     for key in "su3" { _ = engine.handle(.character(key)) }
     #expect(engine.preedit().text == "你")
 }
+
+// MARK: - 數字直出
+
+@Test func 打小數Tab直出() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    for key in "1.62" { _ = engine.handle(.character(key)) }  // ㄅㄡˊ＋ㄉ
+    #expect(engine.numberHint == "1.62")
+    _ = engine.handle(.tab)
+    #expect(engine.preedit().text == "1.62")
+    #expect(engine.handle(.enter).commitText == "1.62")
+}
+
+@Test func 打數字直接Enter也對() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    for key in "162" { _ = engine.handle(.character(key)) }
+    #expect(engine.handle(.enter).commitText == "162")
+}
+
+@Test func 中文後接數字() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    for key in "su3" { _ = engine.handle(.character(key)) }  // 你
+    for key in "1.5" { _ = engine.handle(.character(key)) }
+    _ = engine.handle(.tab)
+    #expect(engine.handle(.enter).commitText == "你1.5")
+}
+
+@Test func 打八不受數字追蹤影響() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    for key in "18 " { _ = engine.handle(.character(key)) }  // ㄅㄚ＋一聲
+    #expect(engine.preedit().text == "八")
+    #expect(engine.handle(.enter).commitText == "八")
+}
+
+@Test func 退格取消數字追蹤() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    for key in "1.6" { _ = engine.handle(.character(key)) }
+    _ = engine.handle(.backspace)
+    #expect(engine.numberHint == nil)
+}
+
+@Test func 字母鍵取消數字追蹤() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    for key in "1k" { _ = engine.handle(.character(key)) }  // 1=ㄅ k=ㄜ：像在打注音
+    #expect(engine.numberHint == nil)
+}

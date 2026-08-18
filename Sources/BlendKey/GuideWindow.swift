@@ -24,6 +24,7 @@ private struct GuideView: View {
         Shortcut(keys: "直接打英文", detail: "打 google 後按空白，候選窗同時列出 google／Google／GOOGLE 與中文字，數字直選"),
         Shortcut(keys: "Shift＋字母", detail: "開始英文段（首字大寫），之後小寫字母原樣接續；再按一下 Shift 回中文"),
         Shortcut(keys: "長按字母／數字", detail: "直接輸出那個字元，例如按住 g 出 g、按住 5 出 5"),
+        Shortcut(keys: "打數字", detail: "直接打 1.62 再按 Tab 或 Enter，就會輸出數字而不是注音"),
         Shortcut(keys: "Shift 單擊", detail: "整體切換中／英模式，游標旁會閃「中」或「A」"),
         Shortcut(keys: "Tab", detail: "接受英文偵測提示，直接上英文字"),
     ]

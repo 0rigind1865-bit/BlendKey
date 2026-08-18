@@ -63,6 +63,10 @@ public final class InputEngine {
     private var sheet: Sheet?
     /// 已由長按轉成直出的鍵：吞掉它後續的自動重複
     private var longPressKey: Character?
+    /// 進行中的純數字鍵串（1.62 這類；空字串＝未追蹤）與期間組出的元素數
+    private var numericRaw = ""
+    private var numericElements = 0
+    private static let numericKeys = Set("0123456789.,-")
     /// 英文接續段：Shift+字母或長按開啟後，後續按鍵原樣直出（大小寫、數字、
     /// 半形標點、空白），直到 Shift 單擊／Esc／方向鍵／上屏結束
     public private(set) var isInLiteralRun = false
@@ -114,6 +118,11 @@ public final class InputEngine {
 
     public var isIdle: Bool { elements.isEmpty && composer.isEmpty }
 
+    /// 從頭到尾都用數字鍵打出來的串（如 1.62），Tab／Enter 直接出數字
+    public var numberHint: String? {
+        numericRaw.contains(where: \.isNumber) ? numericRaw : nil
+    }
+
     /// 組字中的原始按鍵看起來是英文時，提供 Tab 直接上英文的提示。
     /// 兩個訊號：命中英文詞典，或注音槽位被反覆覆寫（打英文的特徵）。
     public var englishHint: String? {
@@ -129,6 +138,10 @@ public final class InputEngine {
 
     public func handle(_ key: KeyInput) -> Output {
         if case .repeatedCharacter = key {} else { longPressKey = nil }
+        switch key {
+        case .character, .tab, .enter: break  // character 自行管理；tab/enter 要用到提示
+        default: cancelNumericRun()
+        }
         if bilingual != nil, let output = handleInBilingual(key) {
             return output
         }
@@ -199,6 +212,10 @@ public final class InputEngine {
             openSheet()
             return .consumed
         case .tab:
+            if numberHint != nil {
+                acceptNumber()
+                return .consumed
+            }
             if let hint = englishHint {
                 composer.clear()
                 insertLiteral(hint)
@@ -318,9 +335,10 @@ public final class InputEngine {
         )
     }
 
-    /// 英文提示的候選窗呈現（單一項目、⇥ 標籤、不搶按鍵）
+    /// 英文／數字提示的候選窗呈現（單一項目、⇥ 標籤、不搶按鍵）
     public func englishHintView() -> SheetView? {
-        guard sheet == nil, bilingual == nil, let hint = englishHint else { return nil }
+        guard sheet == nil, bilingual == nil else { return nil }
+        guard let hint = (numericRaw.count >= 2 ? numberHint : nil) ?? englishHint else { return nil }
         let current = preedit()
         return SheetView(
             items: [SheetView.Item(label: "⇥", value: hint)],
@@ -350,14 +368,45 @@ public final class InputEngine {
         return isIdle ? .ignored : .consumed
     }
 
+    /// 數字鍵串追蹤：組字器空著時以數字鍵起頭就開始記，之後連續的
+    /// 數字鍵（含 . , -，它們同時是 ㄡㄝㄦ）一路累積；出現其他鍵即取消。
+    private func trackNumeric(_ ch: Character, composerWasEmpty: Bool) {
+        if !numericRaw.isEmpty {
+            if Self.numericKeys.contains(ch) { numericRaw.append(ch) } else { cancelNumericRun() }
+        } else if composerWasEmpty, Self.numericKeys.contains(ch), ch.isNumber {
+            numericRaw = String(ch)
+        }
+    }
+
+    private func cancelNumericRun() {
+        numericRaw = ""
+        numericElements = 0
+    }
+
+    /// 把這串數字期間組出的注音全數退掉，改為直出數字文字
+    private func acceptNumber() {
+        guard let number = numberHint else { return }
+        composer.clear()
+        for _ in 0..<min(numericElements, cursor) {
+            removeElement(at: cursor - 1)
+        }
+        insertLiteral(number)
+        cancelNumericRun()
+    }
+
     private func handleCharacter(_ ch: Character) -> Output {
+        let composerWasEmpty = composer.isEmpty
         switch composer.press(ch) {
         case .absorbed:
+            trackNumeric(ch, composerWasEmpty: composerWasEmpty)
             return .consumed
         case .composed(let syllable):
+            trackNumeric(ch, composerWasEmpty: composerWasEmpty)
+            if !numericRaw.isEmpty { numericElements += 1 }
             insertReading(syllable)
             return .consumed
         case .rejected:
+            cancelNumericRun()
             if !composer.isEmpty { return .consumed }  // 打錯鍵不打斷組字
             if fullWidthPunctuation, let punct = Punctuation.fullWidth(ch) {
                 if elements.isEmpty { return Output(handled: true, commitText: punct) }
@@ -567,9 +616,11 @@ public final class InputEngine {
         sheet = nil
         bilingual = nil
         isInLiteralRun = false
+        cancelNumericRun()
     }
 
     private func flushOutput() -> Output {
+        if numberHint != nil { acceptNumber() }  // 打 1.62 直接 Enter＝出 1.62
         guard let text = flush() else { return .ignored }
         return Output(handled: true, commitText: text)
     }
