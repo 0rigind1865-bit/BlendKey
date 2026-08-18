@@ -1,11 +1,30 @@
-# BlendKey 融鍵
+# 融鍵 BlendKey — macOS 繁體中文注音輸入法
 
-專為 macOS 設計的繁體中文注音輸入法，主打**中英混輸零阻礙**：
-打字時不必切換輸入來源，中文、英文、標點一氣呵成。
+[![Release](https://img.shields.io/github/v/release/0rigind1865-bit/BlendKey?label=%E4%B8%8B%E8%BC%89)](https://github.com/0rigind1865-bit/BlendKey/releases/latest)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/macOS-14%2B-lightgrey.svg)](#安裝一般使用者)
+[![Buy Me a Coffee](https://img.shields.io/badge/%E8%B4%8A%E5%8A%A9-Buy%20Me%20a%20Coffee-FFDD00.svg)](https://buymeacoffee.com/0rigind186u)
+
+**免費開源的 macOS 注音輸入法**，主打**中英混輸零阻礙**——打中文、英文、數字、標點
+不必切換輸入來源，一路打下去就好。專為經常中英夾雜的使用者設計：工程師、設計師、
+在雙語環境工作的人。
 
 ```
 我在google上查資料？   ← 全程沒有按過「切換輸入法」
 ```
+
+> **A free, open-source Bopomofo (Zhuyin) input method for macOS**, built for
+> frictionless Chinese-English mixed typing — type Chinese, English, numbers and
+> punctuation without ever switching input sources.
+
+**支援**：macOS 14 以上 ・ 大千（標準）注音鍵盤 ・ 繁體中文 ・ 完全免費、無廣告、不連網
+
+## 為什麼再做一個注音輸入法？
+
+內建注音與現有的開源輸入法（小麥注音、威注音）都很成熟，但**中英夾雜**這件事一直
+很痛：想打一個英文單字就得切換輸入法，切回來又常常忘記。融鍵把這件事當成唯一的
+核心問題來解——打 `google` 直接在候選字裡給你 `google／Google／GOOGLE`，
+忘了切回中文就自己偵測並修正回來。
 
 ## 特色
 
@@ -70,7 +89,7 @@ scripts/make-release.sh # 打包可散布的 zip（含安裝腳本）
 ## 開發
 
 ```bash
-swift test               # 79 個核心單元測試（組字、斷詞、混輸、學習）
+swift test               # 88 個核心單元測試（組字、斷詞、混輸、學習）
 swift run blendkey-cli   # REPL：不安裝也能玩整條組字管線
 log stream --level debug --predicate 'subsystem == "org.blendkey.inputmethod.BlendKey"'
 
@@ -87,7 +106,46 @@ swift run -c release blendkey-cli --eval Tests/Fixtures/sentences.tsv
 - 斷詞用 unigram＋長詞偏好＋使用者詞對學習；沒打過的罕見句型可能要手動改字一次
 - 選單列圖示不隨中英模式變化（HUD 已涵蓋；輸入模式架構會逼出第二次登出，不划算）
 
+## 常見問題
+
+**融鍵和內建注音、小麥注音、威注音差在哪？**
+差在中英混輸。其他輸入法要打英文得切換輸入來源；融鍵讓你直接打下去，
+候選字窗同時給你英文與中文，忘了切換也會自動偵測修正。中文組字品質則同樣
+使用小麥注音的開源詞庫。
+
+**會蒐集我打的字嗎？**
+不會。融鍵完全不連網，學習資料（選字習慣、自造詞、詞語接續）只存在你自己的
+電腦 `~/Library/Application Support/BlendKey/`，可在偏好設定裡隨時檢視與清除。
+
+**為什麼安裝時出現「無法打開，因為無法驗證開發者」？**
+因為本專案沒有付費的 Apple 開發者憑證（年費 99 美元）。用**右鍵點安裝程式 →
+「打開」**即可略過。程式碼全部開源可供檢視。
+
+**為什麼裝完看不到「融鍵」？**
+macOS 的限制：新輸入法必須登出再登入才會出現在系統設定。這是 Apple 已知的
+行為（FB23026482），所有第三方輸入法都一樣。
+
+**支援倚天、許氏鍵盤嗎？**
+目前只支援大千（標準）注音鍵盤。有需求的話歡迎開 issue 讓我知道。
+
+**支援 Windows 或 iOS 嗎？**
+不支援，融鍵是 macOS 專用（使用 InputMethodKit）。
+
+## 贊助
+
+融鍵是免費開源、無廣告、不連網的個人專案。覺得好用的話，可以請我喝杯咖啡：
+
+<a href="https://buymeacoffee.com/0rigind186u"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-%E8%AB%8B%E6%88%91%E5%96%9D%E6%9D%AF%E5%92%96%E5%95%A1-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black" alt="Buy Me a Coffee"></a>
+
+也歡迎用其他方式支持：給專案一顆 ⭐、回報問題、或推薦給需要的朋友。
+
 ## 授權
 
 程式碼 MIT。詞庫轉換自 [McBopomofo 小麥注音](https://github.com/openvanilla/McBopomofo)（MIT，見
 `Resources/data/LICENSE-McBopomofo.txt`）；英文詞表使用 macOS 內建 `/usr/share/dict/words`（公有領域）。
+
+---
+
+<sub>關鍵字：macOS 注音輸入法、Mac 中文輸入法、繁體中文輸入法、大千鍵盤、中英混輸、
+免費輸入法、開源輸入法、bopomofo input method for macOS、zhuyin IME、
+traditional Chinese input method、Taiwan、注音、ㄅㄆㄇㄈ</sub>
