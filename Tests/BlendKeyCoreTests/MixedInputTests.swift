@@ -413,3 +413,45 @@ private func run(_ detector: inout ShiftTapDetector, _ events: [(ShiftTapDetecto
     _ = engine.handle(.space)
     #expect(engine.preedit().text == "1")
 }
+
+@Test func 數字後接非單位字母不跳提示() {
+    // 這些數字鍵＋字母正好是高頻注音，不能誤判成數字
+    for (keys, note) in [("2k", "ㄉㄜ 的"), ("2l", "ㄉㄠ 到"), ("1i", "ㄅㄛ 波"),
+                         ("5j", "ㄓㄨ 主"), ("1p", "ㄅㄣ 本")] {
+        let engine = InputEngine(lexicon: 測試詞庫)
+        for key in keys { _ = engine.handle(.character(key)) }
+        #expect(engine.numberHint == nil, "\(keys)（\(note)）不該跳數字提示")
+    }
+}
+
+@Test func 常見單位仍可直出() {
+    for keys in ["1mm", "0.4mm", "3kg", "60fps", "1920px", "24hz", "4mm"] {
+        let engine = InputEngine(lexicon: 測試詞庫)
+        for key in keys { _ = engine.handle(.character(key)) }
+        #expect(engine.numberHint == keys, "\(keys) 應可直出")
+    }
+}
+
+
+@Test func 單獨可成字的聲母不被數字搶走() {
+    // ㄓ（5）單獨就是「知」，空白必須組字，不能被數字提示搶走
+    let zhi = InputEngine(lexicon: 測試詞庫)
+    _ = zhi.handle(.character("5"))
+    _ = zhi.handle(.space)
+    #expect(zhi.preedit().text == "知")
+
+    // 對照組：ㄅ（1）不能單獨成字，空白照樣讓路給數字
+    let bo = InputEngine(lexicon: 測試詞庫)
+    _ = bo.handle(.character("1"))
+    _ = bo.handle(.space)
+    #expect(bo.preedit().text == "1")
+}
+
+@Test func 游標移動時有活動詞範圍可反白() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    for key in "su3cl3" { _ = engine.handle(.character(key)) }  // 你好
+    _ = engine.handle(.arrowLeft)
+    let range = engine.preedit().activeRangeUTF16
+    #expect(range != nil, "移動游標後應有可反白的活動詞")
+    #expect((range?.length ?? 0) > 0)
+}

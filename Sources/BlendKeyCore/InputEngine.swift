@@ -24,6 +24,15 @@ public final class InputEngine {
         }
         public let pieces: [Piece]
         public let caretUTF16: Int
+        /// 游標所在詞的範圍（UTF-16 起點與長度）：組字中沒有注音時用它反白，
+        /// 讓使用者看得見自己停在哪個詞。核心層零 Foundation 依賴，故不用 NSRange。
+        public let activeRangeUTF16: (start: Int, length: Int)?
+
+        public static func == (lhs: Preedit, rhs: Preedit) -> Bool {
+            lhs.pieces == rhs.pieces && lhs.caretUTF16 == rhs.caretUTF16
+                && lhs.activeRangeUTF16?.start == rhs.activeRangeUTF16?.start
+                && lhs.activeRangeUTF16?.length == rhs.activeRangeUTF16?.length
+        }
 
         public var text: String { pieces.map(\.text).joined() }
         public var isEmpty: Bool { pieces.isEmpty }
@@ -66,7 +75,6 @@ public final class InputEngine {
     /// 進行中的「數字起頭英數串」（1.62、1mm、0.4mm；空字串＝未追蹤）與期間組出的元素數
     private var numericRaw = ""
     private var numericElements = 0
-    private static let numericStarters = Set("0123456789")
     /// 英文接續段：Shift+字母或長按開啟後，後續按鍵原樣直出（大小寫、數字、
     /// 半形標點、空白），直到 Shift 單擊／Esc／方向鍵／上屏結束
     public private(set) var isInLiteralRun = false
@@ -118,10 +126,39 @@ public final class InputEngine {
 
     public var isIdle: Bool { elements.isEmpty && composer.isEmpty }
 
-    /// 從頭到尾都用數字鍵打出來的串（如 1.62），Tab／Enter 直接出數字
+    /// 數字（1.62）或「數字＋單位」（1mm、0.4mm、5V）——Tab 直接輸出原樣。
+    /// 後面接的字母必須是已知單位才算，否則多半是在打注音
+    /// （2k＝ㄉㄜ的、2l＝ㄉㄠ到、1i＝ㄅㄛ波 都是常用字，不能亂跳提示）。
     public var numberHint: String? {
-        numericRaw.contains(where: \.isNumber) ? numericRaw : nil
+        guard numericRaw.contains(where: \.isNumber) else { return nil }
+        guard let firstLetter = numericRaw.firstIndex(where: \.isLetter) else {
+            return numericRaw  // 純數字與 . , -
+        }
+        let unit = String(numericRaw[firstLetter]).lowercased()
+            + String(numericRaw[numericRaw.index(after: firstLetter)...]).lowercased()
+        return Self.units.contains(unit) ? numericRaw : nil
     }
+
+    /// 常見單位白名單。刻意排除 k／l／p／i／o／u／j 等單字母——
+    /// 它們接在數字鍵後面正好是 ㄉㄜ、ㄉㄠ、ㄅㄛ 這些高頻注音組合。
+    private static let units: Set<String> = [
+        // 長度
+        "mm", "cm", "dm", "m", "km", "nm", "um", "in", "ft", "yd", "mil",
+        // 重量
+        "g", "kg", "mg", "t", "lb", "oz",
+        // 容量
+        "ml", "cc", "gal",
+        // 時間與頻率
+        "s", "ms", "ns", "us", "min", "h", "hr", "hz", "khz", "mhz", "ghz", "rpm", "bpm", "fps",
+        // 電
+        "v", "mv", "kv", "a", "ma", "w", "kw", "mw", "wh", "kwh", "ah", "mah", "ohm",
+        // 資料
+        "b", "kb", "mb", "gb", "tb", "bit", "bps", "mbps", "gbps",
+        // 溫度、角度、壓力
+        "c", "f", "deg", "rad", "bar", "psi", "pa", "kpa", "mpa",
+        // 顯示與倍率
+        "px", "pt", "dpi", "ppi", "x", "n",
+    ]
 
     /// 組字中的原始按鍵看起來是英文時，提供 Tab 直接上英文的提示。
     /// 兩個訊號：命中英文詞典，或注音槽位被反覆覆寫（打英文的特徵）。
@@ -179,6 +216,10 @@ public final class InputEngine {
                     return .consumed
                 }
                 return handleCharacter(" ")
+            }
+            // 組字區只有這串數字（沒有注音）：空白直接送出，不開候選窗
+            if numberHint != nil, numericElements == elements.count, !elements.isEmpty {
+                return Output(handled: true, commitText: flush())
             }
             if !elements.isEmpty { openSheet(); return .consumed }
             return .ignored
@@ -304,7 +345,17 @@ public final class InputEngine {
             append(composer.display, .raw)
             caret = pieces.reduce(0) { $0 + $1.text.utf16.count }
         }
-        return Preedit(pieces: pieces, caretUTF16: caret)
+        // 游標所在詞的反白範圍：只在沒有組字中的注音時提供，
+        // 這樣使用者用方向鍵回頭改字時看得見自己停在哪個詞
+        var activeRange: (start: Int, length: Int)?
+        if composer.isEmpty, let active {
+            let texts = elementTexts()
+            let start = texts[..<min(active.start, texts.count)].reduce(0) { $0 + $1.utf16.count }
+            let width = texts[min(active.start, texts.count)..<min(active.end, texts.count)]
+                .reduce(0) { $0 + $1.utf16.count }
+            if width > 0 { activeRange = (start: start, length: width) }
+        }
+        return Preedit(pieces: pieces, caretUTF16: caret, activeRangeUTF16: activeRange)
     }
 
     public func sheetView() -> SheetView? {
@@ -396,7 +447,7 @@ public final class InputEngine {
             } else {
                 cancelNumericRun()
             }
-        } else if composerWasEmpty, Self.numericStarters.contains(ch) {
+        } else if composerWasEmpty, ch.isNumber {
             numericRaw = String(ch)
         }
     }
@@ -404,8 +455,11 @@ public final class InputEngine {
     /// 組字中的音節標上一聲後，詞庫查得到嗎（空白鍵讓路給數字的判準）
     private func tone1FormsKnownReading() -> Bool {
         let syllable = composer.syllable
-        // 單獨一個聲母不成音節（詞庫收了「ㄅ」這個注音符號本身，不能當數）
-        guard syllable.medial != nil || syllable.final != nil else { return false }
+        // 只有 ㄓㄔㄕㄖㄗㄘㄙ 能單獨成音節（知、吃、是、日、資、次、思）；
+        // 其餘聲母單獨出現不是字——詞庫雖收了「ㄅ」這個注音符號本身，不能當數。
+        let standalone: Set<Syllable.Initial> = [.zh, .ch, .sh, .r, .z, .c, .s]
+        guard syllable.medial != nil || syllable.final != nil
+                || syllable.initial.map(standalone.contains) == true else { return false }
         var withTone = syllable
         withTone.tone = .tone1
         return !lexicon.unigrams(withTone.canonical).isEmpty
@@ -439,6 +493,14 @@ public final class InputEngine {
             insertReading(syllable)
             return .consumed
         case .rejected:
+            // 3/4/6/7 是聲調鍵，打在空音節上會被拒——那它就是使用者要的數字。
+            // 納入數字串（4mm、60fps 才起得了頭），並直接放進組字區。
+            if ch.isNumber, composer.isEmpty {
+                trackNumeric(ch, composerWasEmpty: true)
+                insertLiteral(String(ch))
+                if !numericRaw.isEmpty { numericElements += 1 }
+                return .consumed
+            }
             cancelNumericRun()
             if !composer.isEmpty { return .consumed }  // 打錯鍵不打斷組字
             if fullWidthPunctuation, let punct = Punctuation.fullWidth(ch) {

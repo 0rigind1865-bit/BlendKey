@@ -362,7 +362,10 @@ class BlendKeyInputController: IMKInputController {
         }
         client.setMarkedText(
             attributed,
-            selectionRange: NSRange(location: preedit.caretUTF16, length: 0),
+            // 有活動詞就以反白呈現（零長度游標在很多 app 看不出來）
+            selectionRange: preedit.activeRangeUTF16
+                .map { NSRange(location: $0.start, length: $0.length) }
+                ?? NSRange(location: preedit.caretUTF16, length: 0),
             replacementRange: documentRange ?? kNoRange
         )
     }
