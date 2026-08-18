@@ -17,6 +17,7 @@ public final class InputEngine {
             case converted  // 已組句文字
             case active     // 游標所在的詞（按 ↓ 會開它的候選）
             case raw        // 組字中的注音
+            case caret      // 插入位置記號（見 InputEngine.caretMark）
         }
         public struct Piece: Equatable, Sendable {
             public let text: String
@@ -125,6 +126,10 @@ public final class InputEngine {
     }
 
     public var isIdle: Bool { elements.isEmpty && composer.isEmpty }
+
+    /// 插入位置記號：組字中的游標不在句尾時顯示，讓使用者看得見會插在哪兩個字中間。
+    /// macOS 不保證 app 會在組字文字裡畫游標，所以自己畫一個（純顯示，不會被送出）。
+    public static let caretMark = "|"
 
     /// 數字（1.62）或「數字＋單位」（1mm、0.4mm、5V）——Tab 直接輸出原樣。
     /// 後面接的字母必須是已知單位才算，否則多半是在打注音
@@ -332,10 +337,19 @@ public final class InputEngine {
             }
         }
 
+        // 游標在句中時畫出插入記號；句尾不畫（app 自己的游標就在那，畫了反而多餘），
+        // 正在打注音時也不畫（注音本身就長在游標處，位置一目了然）
+        let showCaretMark = composer.isEmpty && cursor < elements.count
+        var caretMarkOffset: Int?
+
         for index in 0..<elements.count {
             if index == cursor {
                 append(composer.display, .raw)
                 caret = pieces.reduce(0) { $0 + $1.text.utf16.count }
+                if showCaretMark {
+                    caretMarkOffset = caret
+                    append(Self.caretMark, .caret)
+                }
             }
             let style: Preedit.Style =
                 (active != nil && index >= active!.start && index < active!.end) ? .active : .converted
@@ -353,8 +367,11 @@ public final class InputEngine {
         if composer.isEmpty, !elements.isEmpty {
             let index = max(0, min(cursor - 1, elements.count - 1))
             let texts = elementTexts()
-            let start = texts[..<index].reduce(0) { $0 + $1.utf16.count }
+            var start = texts[..<index].reduce(0) { $0 + $1.utf16.count }
             let width = texts[index].utf16.count
+            if let offset = caretMarkOffset, offset <= start {
+                start += Self.caretMark.utf16.count  // 記號插在前面，反白起點跟著移
+            }
             if width > 0 { activeRange = (start: start, length: width) }
         }
         return Preedit(pieces: pieces, caretUTF16: caret, activeRangeUTF16: activeRange)

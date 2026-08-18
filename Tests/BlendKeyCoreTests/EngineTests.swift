@@ -113,3 +113,37 @@ private func type(_ engine: InputEngine, _ keys: String) {
     #expect(atEnd?.length == 1, "反白應只框一個字，不是整個詞")
     #expect(atEnd?.start != moved?.start, "詞內移動游標，反白位置要跟著變")
 }
+
+@Test func 游標在句中時顯示插入記號_句尾不顯示() {
+    let engine = makeEngine()
+    type(engine, "su3cl3")  // 你好
+    #expect(!engine.preedit().text.contains(InputEngine.caretMark), "句尾不該畫記號")
+    _ = engine.handle(.arrowLeft)
+    #expect(engine.preedit().text == "你|好", "句中要看得見插入點")
+    _ = engine.handle(.arrowLeft)
+    #expect(engine.preedit().text == "|你好", "句首也要看得見")
+}
+
+@Test func 插入記號不會被送出() {
+    let engine = makeEngine()
+    type(engine, "su3cl3")
+    _ = engine.handle(.arrowLeft)
+    #expect(engine.preedit().text.contains(InputEngine.caretMark))
+    #expect(engine.handle(.enter).commitText == "你好", "送出的字不能含記號")
+}
+
+@Test func 從記號位置插入字() {
+    let engine = makeEngine()
+    type(engine, "su3cl3")   // 你好
+    _ = engine.handle(.arrowLeft)  // 你|好
+    type(engine, "g4")       // 插入 是
+    #expect(engine.handle(.enter).commitText == "你是好")
+}
+
+@Test func 打注音時不顯示記號() {
+    let engine = makeEngine()
+    type(engine, "su3cl3")
+    _ = engine.handle(.arrowLeft)
+    type(engine, "g")  // 開始打注音（ㄕ 本身就長在游標處）
+    #expect(!engine.preedit().text.contains(InputEngine.caretMark))
+}

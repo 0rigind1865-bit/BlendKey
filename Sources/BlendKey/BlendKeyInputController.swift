@@ -353,6 +353,7 @@ class BlendKeyInputController: IMKInputController {
             case .converted: style = Int(kTSMHiliteConvertedText)
             case .active: style = Int(kTSMHiliteSelectedConvertedText)
             case .raw: style = Int(kTSMHiliteSelectedRawText)
+            case .caret: style = Int(kTSMHiliteRawText)
             }
             let range = NSRange(location: location, length: piece.text.utf16.count)
             let attrs = mark(forStyle: style, at: range) as? [NSAttributedString.Key: Any]
