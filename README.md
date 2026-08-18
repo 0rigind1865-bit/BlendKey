@@ -57,7 +57,7 @@ scripts/make-release.sh # 打包可散布的 zip（含安裝腳本）
 | ←→ | 移動游標（改字用）；窗內＝翻頁 |
 | 1–9 | 選候選 |
 | Caps Lock | 亮＝英數直通模式；但若在此狀態下打注音，會自動判定並切回中文 |
-| Tab | 接受英文／數字偵測提示（打 `1.62` 按 Tab 出數字；直接 Enter 也可） |
+| Tab | 接受英文／數字偵測提示（`1.62`、`1mm`、`0.4mm` 打完按 Tab 直出；單一數字 `1` 按空白即可） |
 | 長按字母／數字鍵 | 直接輸出該字元（英文字母、數字），不當注音 |
 | Enter | 上屏 |
 | Esc | 清組字／關候選窗 |
@@ -70,7 +70,7 @@ scripts/make-release.sh # 打包可散布的 zip（含安裝腳本）
 ## 開發
 
 ```bash
-swift test               # 72 個核心單元測試（組字、斷詞、混輸、學習）
+swift test               # 79 個核心單元測試（組字、斷詞、混輸、學習）
 swift run blendkey-cli   # REPL：不安裝也能玩整條組字管線
 log stream --level debug --predicate 'subsystem == "org.blendkey.inputmethod.BlendKey"'
 

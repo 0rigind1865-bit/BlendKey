@@ -279,6 +279,15 @@ class BlendKeyInputController: IMKInputController {
         case kVK_Space: return .space
         default: break
         }
+        // 數字小鍵盤有獨立鍵碼、與注音鍵位無關：永遠當數字放行
+        let keypadKeys = [
+            kVK_ANSI_Keypad0, kVK_ANSI_Keypad1, kVK_ANSI_Keypad2, kVK_ANSI_Keypad3,
+            kVK_ANSI_Keypad4, kVK_ANSI_Keypad5, kVK_ANSI_Keypad6, kVK_ANSI_Keypad7,
+            kVK_ANSI_Keypad8, kVK_ANSI_Keypad9, kVK_ANSI_KeypadDecimal, kVK_ANSI_KeypadPlus,
+            kVK_ANSI_KeypadMinus, kVK_ANSI_KeypadMultiply, kVK_ANSI_KeypadDivide, kVK_ANSI_KeypadEquals,
+        ]
+        if keypadKeys.contains(Int(event.keyCode)) { return nil }
+
         guard let chars = event.characters, chars.count == 1, let ch = chars.first else { return nil }
         if ch == " " { return .space }
         if event.modifierFlags.contains(.shift), ch.isLetter {

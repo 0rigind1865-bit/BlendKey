@@ -63,10 +63,10 @@ public final class InputEngine {
     private var sheet: Sheet?
     /// 已由長按轉成直出的鍵：吞掉它後續的自動重複
     private var longPressKey: Character?
-    /// 進行中的純數字鍵串（1.62 這類；空字串＝未追蹤）與期間組出的元素數
+    /// 進行中的「數字起頭英數串」（1.62、1mm、0.4mm；空字串＝未追蹤）與期間組出的元素數
     private var numericRaw = ""
     private var numericElements = 0
-    private static let numericKeys = Set("0123456789.,-")
+    private static let numericStarters = Set("0123456789")
     /// 英文接續段：Shift+字母或長按開啟後，後續按鍵原樣直出（大小寫、數字、
     /// 半形標點、空白），直到 Shift 單擊／Esc／方向鍵／上屏結束
     public private(set) var isInLiteralRun = false
@@ -128,9 +128,12 @@ public final class InputEngine {
     public var englishHint: String? {
         guard englishHintEnabled else { return nil }
         let raw = composer.rawKeys
-        guard raw.count >= 3, raw.allSatisfy(\.isLetter) else { return nil }
+        // 允許字母數字混合（1mm、3D、v2），但至少要有一個字母——純數字歸 numberHint
+        guard raw.count >= 3, raw.allSatisfy({ $0.isLetter || $0.isNumber }),
+              raw.contains(where: \.isLetter) else { return nil }
         if let detector = englishDetector, detector.isWord(raw) { return raw }
-        if raw.count >= 4, composer.overwriteCount >= 2 { return raw }
+        // 注音槽位被覆寫＝打字途中改鍵，多半不是在打注音
+        if composer.overwriteCount >= 1 { return raw }
         return nil
     }
 
@@ -139,7 +142,7 @@ public final class InputEngine {
     public func handle(_ key: KeyInput) -> Output {
         if case .repeatedCharacter = key {} else { longPressKey = nil }
         switch key {
-        case .character, .tab, .enter: break  // character 自行管理；tab/enter 要用到提示
+        case .character, .space, .tab, .enter: break  // 這些要用到數字追蹤；character/space 自行管理
         default: cancelNumericRun()
         }
         if bilingual != nil, let output = handleInBilingual(key) {
@@ -169,6 +172,12 @@ public final class InputEngine {
             if !composer.isEmpty {
                 // 偵測到英文：空白改開中英並列選字，不硬組一聲字
                 if englishHint != nil { openBilingualSheet(); return .consumed }
+                // 數字串且標一聲也組不出字（ㄅ、ㄉ 單獨不是字）：空白＝直接出數字。
+                // 組得出字的維持注音優先（18＋空白還是「八」，要 18 用 Tab）。
+                if numberHint != nil, !tone1FormsKnownReading() {
+                    acceptNumber()
+                    return .consumed
+                }
                 return handleCharacter(" ")
             }
             if !elements.isEmpty { openSheet(); return .consumed }
@@ -338,14 +347,23 @@ public final class InputEngine {
     /// 英文／數字提示的候選窗呈現（單一項目、⇥ 標籤、不搶按鍵）
     public func englishHintView() -> SheetView? {
         guard sheet == nil, bilingual == nil else { return nil }
-        guard let hint = (numericRaw.count >= 2 ? numberHint : nil) ?? englishHint else { return nil }
+        let numeric = numericRaw.count >= 2 ? numberHint : nil
+        guard let hint = numeric ?? englishHint else { return nil }
         let current = preedit()
+        // 英文提示只跨組字中的注音；數字提示還要往回涵蓋這串期間已組出的字
+        var width = composer.display.utf16.count
+        if numeric != nil {
+            let texts = elementTexts()
+            for index in max(0, cursor - numericElements)..<cursor {
+                width += texts[index].utf16.count
+            }
+        }
         return SheetView(
             items: [SheetView.Item(label: "⇥", value: hint)],
             highlightedInPage: -1,
             pageIndex: 0,
             pageCount: 1,
-            anchorUTF16: current.caretUTF16 - composer.display.utf16.count
+            anchorUTF16: max(0, current.caretUTF16 - width)
         )
     }
 
@@ -372,10 +390,25 @@ public final class InputEngine {
     /// 數字鍵（含 . , -，它們同時是 ㄡㄝㄦ）一路累積；出現其他鍵即取消。
     private func trackNumeric(_ ch: Character, composerWasEmpty: Bool) {
         if !numericRaw.isEmpty {
-            if Self.numericKeys.contains(ch) { numericRaw.append(ch) } else { cancelNumericRun() }
-        } else if composerWasEmpty, Self.numericKeys.contains(ch), ch.isNumber {
+            // 數字起頭之後，字母與 . , - 都算同一串（1mm、0.4mm、5v）
+            if ch.isLetter || ch.isNumber || ".,-".contains(ch) {
+                numericRaw.append(ch)
+            } else {
+                cancelNumericRun()
+            }
+        } else if composerWasEmpty, Self.numericStarters.contains(ch) {
             numericRaw = String(ch)
         }
+    }
+
+    /// 組字中的音節標上一聲後，詞庫查得到嗎（空白鍵讓路給數字的判準）
+    private func tone1FormsKnownReading() -> Bool {
+        let syllable = composer.syllable
+        // 單獨一個聲母不成音節（詞庫收了「ㄅ」這個注音符號本身，不能當數）
+        guard syllable.medial != nil || syllable.final != nil else { return false }
+        var withTone = syllable
+        withTone.tone = .tone1
+        return !lexicon.unigrams(withTone.canonical).isEmpty
     }
 
     private func cancelNumericRun() {
@@ -620,7 +653,8 @@ public final class InputEngine {
     }
 
     private func flushOutput() -> Output {
-        if numberHint != nil { acceptNumber() }  // 打 1.62 直接 Enter＝出 1.62
+        // 這裡刻意不碰數字提示：「打」＝2ㄉ8ㄚ3ˇ 整串都是數字鍵，
+        // Enter 若自動選數字就會把打好的中文換成 283。要數字請按 Tab。
         guard let text = flush() else { return .ignored }
         return Output(handled: true, commitText: text)
     }

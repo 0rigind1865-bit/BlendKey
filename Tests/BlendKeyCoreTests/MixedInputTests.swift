@@ -314,15 +314,35 @@ private func run(_ detector: inout ShiftTapDetector, _ events: [(ShiftTapDetecto
     let engine = InputEngine(lexicon: 測試詞庫)
     for key in "1.62" { _ = engine.handle(.character(key)) }  // ㄅㄡˊ＋ㄉ
     #expect(engine.numberHint == "1.62")
+    // 提示視窗要對齊數字串起點（涵蓋已組出的字＋組字中的注音）
+    #expect(engine.englishHintView()?.anchorUTF16 == 0)
     _ = engine.handle(.tab)
     #expect(engine.preedit().text == "1.62")
     #expect(engine.handle(.enter).commitText == "1.62")
 }
 
-@Test func 打數字直接Enter也對() {
+@Test func Enter不搶數字_打才不會變283() {
+    // 「打」＝2ㄉ 8ㄚ 3ˇ，整串都是數字鍵。Enter 必須出中文，不能出 283
+    let engine = InputEngine(lexicon: 測試詞庫)
+    for key in "283" { _ = engine.handle(.character(key)) }
+    #expect(engine.preedit().text == "打")
+    #expect(engine.handle(.enter).commitText == "打")
+}
+
+@Test func 數字只有Tab才選() {
     let engine = InputEngine(lexicon: 測試詞庫)
     for key in "162" { _ = engine.handle(.character(key)) }
+    #expect(engine.numberHint == "162")
+    _ = engine.handle(.tab)
     #expect(engine.handle(.enter).commitText == "162")
+}
+
+@Test func 單一數字用空白直出() {
+    // ㄅ 標一聲組不出字 → 空白讓路給數字，解決「中文模式下打 1 很卡」
+    let engine = InputEngine(lexicon: 測試詞庫)
+    _ = engine.handle(.character("1"))
+    _ = engine.handle(.space)
+    #expect(engine.preedit().text == "1")
 }
 
 @Test func 中文後接數字() {
@@ -347,8 +367,49 @@ private func run(_ detector: inout ShiftTapDetector, _ events: [(ShiftTapDetecto
     #expect(engine.numberHint == nil)
 }
 
-@Test func 字母鍵取消數字追蹤() {
+@Test func 非英數鍵取消數字追蹤() {
+    // 字母現在會延續數字串（1mm），但符號鍵不會
     let engine = InputEngine(lexicon: 測試詞庫)
-    for key in "1k" { _ = engine.handle(.character(key)) }  // 1=ㄅ k=ㄜ：像在打注音
+    for key in "1/" { _ = engine.handle(.character(key)) }  // / = ㄥ
     #expect(engine.numberHint == nil)
+}
+
+@Test func 字母起頭不進數字追蹤() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    for key in "su3" { _ = engine.handle(.character(key)) }  // 你
+    #expect(engine.numberHint == nil)
+}
+
+@Test func 字母數字混合可用Tab直出() {
+    // 1mm、3D、v2 這類：混了數字所以不是英文詞，混了字母所以不是純數字
+    let engine = InputEngine(lexicon: 測試詞庫)
+    for key in "1mm" { _ = engine.handle(.character(key)) }
+    #expect(engine.englishHint == "1mm")
+    _ = engine.handle(.tab)
+    #expect(engine.handle(.enter).commitText == "1mm")
+}
+
+@Test func 正常注音不因放寬而誤觸提示() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    for key in "2u0" { _ = engine.handle(.character(key)) }  // ㄉㄧㄢ：三個不同槽位，零覆寫
+    #expect(engine.englishHint == nil)
+}
+
+@Test func 數字起頭的英數串一併涵蓋() {
+    // 3D 列印常用的量測寫法
+    for (keys, expected) in [("1mm", "1mm"), ("0.4mm", "0.4mm"), ("5v", "5v")] {
+        let engine = InputEngine(lexicon: 測試詞庫)
+        for key in keys { _ = engine.handle(.character(key)) }
+        #expect(engine.numberHint == expected, "\(keys) 應可直出")
+        _ = engine.handle(.tab)
+        #expect(engine.handle(.enter).commitText == expected)
+    }
+}
+
+@Test func 單獨聲母不算音節_空白直出數字() {
+    // 詞庫收了「ㄅ」這個注音符號本身，但它不是音節，空白應讓路給數字
+    let engine = InputEngine(lexicon: 測試詞庫)
+    _ = engine.handle(.character("1"))
+    _ = engine.handle(.space)
+    #expect(engine.preedit().text == "1")
 }
