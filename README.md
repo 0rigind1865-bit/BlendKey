@@ -13,6 +13,14 @@
 我在google上查資料？   ← 全程沒有按過「切換輸入法」
 ```
 
+<p align="center">
+  <img src="docs/01-candidates.png" width="49%" alt="融鍵候選字窗——直式清單、毛玻璃質感、跟隨游標">
+  <img src="docs/02-bilingual.png" width="49%" alt="中英並列選字——google／Google／GOOGLE 與中文字同窗，數字直選">
+</p>
+<p align="center">
+  <sub>左：智慧整句組字與候選字窗　　右：中英並列選字——打完 google 按空白，三種大小寫與中文字一起挑</sub>
+</p>
+
 > **A free, open-source Bopomofo (Zhuyin) input method for macOS**, built for
 > frictionless Chinese-English mixed typing — type Chinese, English, numbers and
 > punctuation without ever switching input sources.
@@ -85,6 +93,14 @@ scripts/make-release.sh # 打包可散布的 zip（含安裝腳本）
 | 接續段中單擊 Shift／Esc | 結束英文段，回注音組字 |
 
 輸入法選單（選單列的融鍵圖示）提供：**操作說明**、**學習資料**（可逐筆檢視與刪除）、**偏好設定**。
+
+<p align="center">
+  <img src="docs/03-guide.png" width="49%" alt="操作說明視窗——中文輸入、中英混輸、自動處理三區按鍵對照">
+  <img src="docs/04-learned.png" width="49%" alt="學習資料視窗——選字紀錄、自動造詞、詞語接續三類，可搜尋與逐筆刪除">
+</p>
+<p align="center">
+  <sub>左：一頁看完怎麼用　　右：融鍵記住了什麼——可搜尋、可逐筆刪掉學壞的</sub>
+</p>
 
 ## 開發
 
