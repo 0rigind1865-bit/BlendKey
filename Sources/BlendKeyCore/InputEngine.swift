@@ -94,6 +94,13 @@ public final class InputEngine {
 
     /// 全形標點開關（偏好設定）
     public var fullWidthPunctuation = true
+    /// 相似音修正開關（偏好設定）：ㄓㄗ、ㄔㄘ、ㄕㄙ、ㄌㄋ、ㄈㄏ、ㄣㄥ、ㄢㄤ 互通
+    public var fuzzyReadingEnabled = false {
+        didSet {
+            decoder.fuzzyEnabled = fuzzyReadingEnabled
+            rewalk()
+        }
+    }
     /// 英文自動偵測開關（偏好設定）
     public var englishHintEnabled = true
     /// 英文詞偵測器（載妥後注入；nil 時只剩覆寫啟發式）

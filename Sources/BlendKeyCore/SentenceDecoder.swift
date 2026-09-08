@@ -41,6 +41,10 @@ public struct SentenceDecoder {
     public var transitionWeight = 2.0
     /// 每個跨距取幾個候選進詞圖：>1 才讓上下文有選擇餘地
     public var candidateDepth = 4
+    /// 相似音（ㄓㄗ、ㄕㄙ、ㄣㄥ…互通）：開啟後打錯也找得到字
+    public var fuzzyEnabled = false
+    /// 相似音候選的罰分：確保正確讀音永遠排在前面，只在沒有更好選擇時遞補
+    private let fuzzyPenalty = -6.0
     /// 未知讀音（詞庫查不到的單音節）的懲罰分數
     private let unknownPenalty = -17.0
     /// 每節點固定罰分：偏好長詞路徑，補償 unigram 獨立性假設低估長詞的問題。
@@ -60,12 +64,20 @@ public struct SentenceDecoder {
         unigram.score + (scoreBonus?(reading, unigram.value) ?? 0)
     }
 
-    /// 內建詞庫＋使用者詞合流，同值保留調整後分數較高者
+    /// 內建詞庫＋使用者詞＋相似音變體合流，同值保留調整後分數較高者
     private func allUnigrams(_ reading: String) -> [Unigram] {
         let extras = extraUnigrams?(reading) ?? []
-        guard !extras.isEmpty else { return lexicon.unigrams(reading) }
+        guard fuzzyEnabled || !extras.isEmpty else { return lexicon.unigrams(reading) }
+        var pool = lexicon.unigrams(reading) + extras
+        if fuzzyEnabled {
+            for variant in FuzzyReading.variants(of: reading) {
+                pool += lexicon.unigrams(variant).map {
+                    Unigram(value: $0.value, score: $0.score + fuzzyPenalty)
+                }
+            }
+        }
         var best: [String: Unigram] = [:]
-        for unigram in lexicon.unigrams(reading) + extras {
+        for unigram in pool {
             if let current = best[unigram.value],
                adjusted(current, reading: reading) >= adjusted(unigram, reading: reading) {
                 continue

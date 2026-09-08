@@ -7,6 +7,7 @@ enum SettingKey {
     static let englishHint = "englishHint"
     static let fullWidthPunctuation = "fullWidthPunctuation"
     static let pageSize = "pageSize"
+    static let fuzzyReading = "fuzzyReading"
 
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [
@@ -14,6 +15,7 @@ enum SettingKey {
             englishHint: true,
             fullWidthPunctuation: true,
             pageSize: 9,
+            fuzzyReading: false,
         ])
     }
 }
@@ -23,6 +25,7 @@ private struct SettingsView: View {
     @AppStorage(SettingKey.englishHint) private var englishHint = true
     @AppStorage(SettingKey.fullWidthPunctuation) private var fullWidthPunctuation = true
     @AppStorage(SettingKey.pageSize) private var pageSize = 9
+    @AppStorage(SettingKey.fuzzyReading) private var fuzzyReading = false
     @State private var showingResetAlert = false
     @State private var didReset = false
 
@@ -41,6 +44,10 @@ private struct SettingsView: View {
             }
             Section("中文輸入") {
                 Toggle("全形標點（，。？！…）", isOn: $fullWidthPunctuation)
+                Toggle("相似音修正（ㄓㄗ、ㄕㄙ、ㄣㄥ 打錯也找得到）", isOn: $fuzzyReading)
+                Text("開啟後正確讀音仍排最前面，相似音只在後面遞補。")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
                 Picker("候選字窗每頁字數", selection: $pageSize) {
                     Text("7").tag(7)
                     Text("9").tag(9)

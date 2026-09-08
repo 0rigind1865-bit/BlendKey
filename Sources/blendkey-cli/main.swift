@@ -42,6 +42,10 @@ func rows(_ path: String) -> [(readings: [String], expected: String)] {
 
 if let evalPath {
     var decoder = SentenceDecoder(lexicon: lexicon)
+    if ProcessInfo.processInfo.environment["BK_FUZZY"] == "1" {
+        decoder.fuzzyEnabled = true
+        print("相似音：開")
+    }
 
     // 訓練：把句子的正確斷詞當作「使用者打過並上屏」餵進學習庫
     if let trainPath {

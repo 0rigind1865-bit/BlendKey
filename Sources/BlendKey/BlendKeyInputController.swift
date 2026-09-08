@@ -315,6 +315,8 @@ class BlendKeyInputController: IMKInputController {
             engine.englishHintEnabled = defaults.bool(forKey: SettingKey.englishHint)
             engine.fullWidthPunctuation = defaults.bool(forKey: SettingKey.fullWidthPunctuation)
             engine.pageSize = defaults.integer(forKey: SettingKey.pageSize)
+            let fuzzy = defaults.bool(forKey: SettingKey.fuzzyReading)
+            if engine.fuzzyReadingEnabled != fuzzy { engine.fuzzyReadingEnabled = fuzzy }
         }
         return engine
     }
