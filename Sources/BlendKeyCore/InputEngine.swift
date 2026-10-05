@@ -641,6 +641,12 @@ public final class InputEngine {
         case .escape:
             bilingual = nil  // 收窗、保留組字中的注音
             return .consumed
+        case .backspace:
+            // 退一個字母、窗不關（還像英文就用新字串重開）
+            bilingual = nil
+            _ = composer.backspace()
+            openBilingualSheet()
+            return .consumed
         default:
             bilingual = nil
             return nil

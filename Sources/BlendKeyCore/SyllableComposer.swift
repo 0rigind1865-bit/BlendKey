@@ -45,18 +45,17 @@ public struct SyllableComposer: Equatable, Sendable {
         return .absorbed
     }
 
-    /// 清掉最後一個填入的槽；組字器已空回傳 false
+    /// 退掉最後一個按鍵：用剩下的原始按鍵重播一次。
+    /// 打英文時字母會覆寫注音槽（google 只佔 2 槽），退槽的話退兩下整串就消失；
+    /// 重播＝真正的「上一個按鍵沒按過」，覆寫前的注音也會還原。組字器已空回傳 false
     public mutating func backspace() -> Bool {
-        guard let last = slotOrder.popLast() else {
+        guard !rawKeys.isEmpty else {
             clear()
             return false
         }
-        switch last {
-        case .initial: syllable.initial = nil
-        case .medial: syllable.medial = nil
-        case .final: syllable.final = nil
-        }
-        if !rawKeys.isEmpty { rawKeys.removeLast() }
+        let keys = rawKeys.dropLast()
+        clear()
+        for key in keys { _ = press(key) }
         return true
     }
 

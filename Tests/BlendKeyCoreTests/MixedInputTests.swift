@@ -455,3 +455,27 @@ private func run(_ detector: inout ShiftTapDetector, _ events: [(ShiftTapDetecto
     #expect(range != nil, "移動游標後應有可反白的活動詞")
     #expect((range?.length ?? 0) > 0)
 }
+
+@Test func 英文提示中退格一次刪一個字母() {
+    // 「google」只填了 3 個注音槽，舊版退格是退槽：退 3 次整串就消失
+    let engine = InputEngine(lexicon: 測試詞庫)
+    engine.englishDetector = 偵測器
+    for key in "google" { _ = engine.handle(.character(key)) }
+    _ = engine.handle(.backspace)
+    #expect(engine.englishHint == "googl")
+    _ = engine.handle(.backspace)
+    _ = engine.handle(.backspace)
+    #expect(engine.englishHint == "goo")
+    #expect(!engine.isIdle)
+}
+
+@Test func 中英並列窗退格刪字且窗不關() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    engine.englishDetector = 偵測器
+    for key in "hello" { _ = engine.handle(.character(key)) }
+    _ = engine.handle(.space)  // 開中英並列
+    #expect(engine.sheetView() != nil)
+    _ = engine.handle(.backspace)
+    #expect(engine.englishHint == "hell")
+    #expect(engine.sheetView() != nil)
+}
