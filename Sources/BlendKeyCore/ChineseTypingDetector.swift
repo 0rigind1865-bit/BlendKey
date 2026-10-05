@@ -31,9 +31,11 @@ public struct ChineseTypingDetector: Sendable {
         case .composed(let syllable):
             pendingKeys.append(ch)
             // 打字途中改鍵很常見，覆寫本身不算雜訊；把關交給
-            // 「音節查得到詞」＋「串中要有數字聲調」——英文兩關都過不了
-            _ = overwritesBefore
-            guard isKnownReading(syllable.canonical) else {
+            // 「音節查得到詞」＋「串中要有數字聲調」——英文兩關都過不了。
+            // 例外：空白收尾（一聲）又有覆寫＝英文單字＋空白（google、test、ok…
+            // 常見英文詞一半會這樣湊出查得到的一聲音節），不算，否則會連前一個英文字一起收回
+            let wordThenSpace = syllable.tone == .tone1 && overwritesBefore > 0
+            guard !wordThenSpace, isKnownReading(syllable.canonical) else {
                 resetStreak()
                 return nil
             }

@@ -479,3 +479,58 @@ private func run(_ detector: inout ShiftTapDetector, _ events: [(ShiftTapDetecto
     #expect(engine.englishHint == "hell")
     #expect(engine.sheetView() != nil)
 }
+
+// MARK: - 使用者體驗修正（2026-10）
+
+@Test func 偵測到英文時組字區顯示字母_Enter送出英文() {
+    // 舊版組字區顯示被覆寫剩下的「ㄍㄠ」，Enter 也送出 ㄍㄠ
+    let engine = InputEngine(lexicon: 測試詞庫)
+    engine.englishDetector = 偵測器
+    for key in "google" { _ = engine.handle(.character(key)) }
+    #expect(engine.preedit().text == "google")
+    #expect(engine.handle(.enter).commitText == "google")
+}
+
+@Test func Shift字母不吃掉前面的小寫() {
+    // iPhone：i 先進了注音組字，舊版按 Shift+P 會把 i 丟掉
+    let engine = InputEngine(lexicon: 測試詞庫)
+    _ = engine.handle(.character("i"))
+    _ = engine.handle(.englishLiteral("P"))
+    for key in "hone" { _ = engine.handle(.character(key)) }
+    #expect(engine.handle(.enter).commitText == "iPhone")
+}
+
+@Test func 中英並列窗直接打下一個字_先上反白的英文() {
+    // 舊版：google 空白 後直接打注音，google 會被當成注音吃掉
+    let engine = InputEngine(lexicon: 測試詞庫)
+    engine.englishDetector = 偵測器
+    for key in "google" { _ = engine.handle(.character(key)) }
+    _ = engine.handle(.space)
+    for key in "su3" { _ = engine.handle(.character(key)) }
+    #expect(engine.handle(.enter).commitText == "google你")
+}
+
+@Test func 每頁7字時數字8不會選到下一頁() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    engine.pageSize = 2
+    for key in "su3" { _ = engine.handle(.character(key)) }
+    _ = engine.handle(.arrowDown)  // 候選：你 妳｜擬
+    _ = engine.handle(.character("3"))  // 這頁只有 1、2
+    #expect(engine.sheetView() != nil)  // 沒有選到第二頁的「擬」
+    #expect(engine.preedit().text == "你")
+}
+
+@Test func 英文單字加空白不算注音音節() {
+    // 英文模式打「google 你好」：舊版會把 google 一起收回重組
+    var detector = ChineseTypingDetector { ["ㄋㄧˇ", "ㄏㄠˇ", "ㄍㄠ"].contains($0) }
+    #expect(feedAll(&detector, "google su3cl3") == "su3cl3")
+}
+
+@Test func 英文段裡打注音自動回中文() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    _ = engine.handle(.englishLiteral("G"))
+    for key in "oogle " { _ = engine.handle(.character(key)) }
+    for key in "su3cl3" { _ = engine.handle(.character(key)) }
+    #expect(!engine.isInLiteralRun)
+    #expect(engine.handle(.enter).commitText == "Google 你好")
+}

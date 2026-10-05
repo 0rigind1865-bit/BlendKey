@@ -21,8 +21,8 @@ private struct GuideView: View {
     ]
 
     private let mixed = [
-        Shortcut(keys: "直接打英文", detail: "打 google 後按空白，候選窗同時列出 google／Google／GOOGLE 與中文字，數字直選"),
-        Shortcut(keys: "Shift＋字母", detail: "開始英文段（首字大寫），之後小寫字母原樣接續；再按一下 Shift 回中文"),
+        Shortcut(keys: "直接打英文", detail: "打 google 後按空白，候選窗同時列出 google／Google／GOOGLE 與中文字，數字直選；按 Enter 直接送出英文"),
+        Shortcut(keys: "Shift＋字母", detail: "開始英文段（首字大寫），之後小寫字母原樣接續；再按一下 Shift 回中文，或直接打注音也會自動回中文"),
         Shortcut(keys: "長按字母／數字", detail: "直接輸出那個字元，例如按住 g 出 g、按住 5 出 5"),
         Shortcut(keys: "打數字", detail: "直接打 1.62、1mm、0.4mm 再按 Tab 就會輸出原樣；單一數字打 1 按空白即可"),
         Shortcut(keys: "Shift 單擊", detail: "整體切換中／英模式，游標旁會閃「中」或「A」"),
@@ -51,7 +51,7 @@ private struct GuideView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("小訣竅").font(.headline)
-                    Text("・打「用Google搜索」：先打 ㄩㄥˋ，再打 google 按空白選 Google，接著繼續打注音\n"
+                    Text("・打「用Google搜索」：先打 ㄩㄥˋ，再打 google 按空白選 Google，接著直接打注音（反白的那個會自動選上）\n"
                          + "・不小心按到大寫燈也沒關係，繼續打注音它會自己修正回來\n"
                          + "・想看融鍵記住了什麼，開「學習資料…」，可以逐筆刪掉學壞的")
                         .font(.callout)

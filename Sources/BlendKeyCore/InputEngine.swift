@@ -79,6 +79,10 @@ public final class InputEngine {
     /// 英文接續段：Shift+字母或長按開啟後，後續按鍵原樣直出（大小寫、數字、
     /// 半形標點、空白），直到 Shift 單擊／Esc／方向鍵／上屏結束
     public private(set) var isInLiteralRun = false
+    /// 英文段裡的反向偵測（同英文模式）：發現在打注音就自動結束英文段、改組中文
+    private lazy var literalRunDetector = ChineseTypingDetector { [lexicon] reading in
+        !lexicon.unigrams(reading).isEmpty
+    }
 
     /// 中英並列選字：組字中偵測到英文時按空白／↓ 開啟，
     /// 英文大小寫變體與一聲中文字並列，數字直選
@@ -186,10 +190,18 @@ public final class InputEngine {
         return nil
     }
 
+    /// 組字中的顯示：偵測到英文就顯示原始字母——打 google 看到 google，
+    /// 而不是被覆寫剩下的「ㄍㄠ」；Enter 送出的也是這個
+    private var composingText: String { englishHint ?? composer.display }
+
     // MARK: - 事件入口
 
     public func handle(_ key: KeyInput) -> Output {
         if case .repeatedCharacter = key {} else { longPressKey = nil }
+        switch key {
+        case .character, .space: break
+        default: literalRunDetector.reset()  // 只有連續打字才累積，其他鍵都打斷
+        }
         switch key {
         case .character, .space, .tab, .enter: break  // 這些要用到數字追蹤；character/space 自行管理
         default: cancelNumericRun()
@@ -202,7 +214,7 @@ public final class InputEngine {
         }
         switch key {
         case .character(let ch):
-            if isInLiteralRun { insertLiteral(String(ch)); return .consumed }
+            if isInLiteralRun { return handleLiteralRunKey(ch) }
             return handleCharacter(ch)
         case .repeatedCharacter(let ch):
             if isInLiteralRun {
@@ -212,12 +224,15 @@ public final class InputEngine {
             }
             return handleLongPress(ch)
         case .englishLiteral(let ch):
+            // 組字中的按鍵原樣併進英文段：iPhone 的 i、macOS 的 mac 不能被吃掉
+            let pending = composer.rawKeys
             composer.clear()
+            for key in pending { insertLiteral(String(key)) }
             insertLiteral(String(ch))
             isInLiteralRun = true  // 開始英文接續段：後續小寫字母原樣直出
             return .consumed
         case .space:
-            if isInLiteralRun { insertLiteral(" "); return .consumed }
+            if isInLiteralRun { return handleLiteralRunKey(" ") }
             if !composer.isEmpty {
                 // 偵測到英文：空白改開中英並列選字，不硬組一聲字
                 if englishHint != nil { openBilingualSheet(); return .consumed }
@@ -351,7 +366,7 @@ public final class InputEngine {
 
         for index in 0..<elements.count {
             if index == cursor {
-                append(composer.display, .raw)
+                append(composingText, .raw)
                 caret = pieces.reduce(0) { $0 + $1.text.utf16.count }
                 if showCaretMark {
                     caretMarkOffset = caret
@@ -363,7 +378,7 @@ public final class InputEngine {
             append(texts[index], style)
         }
         if cursor == elements.count {
-            append(composer.display, .raw)
+            append(composingText, .raw)
             caret = pieces.reduce(0) { $0 + $1.text.utf16.count }
         }
         // 游標所在詞的反白範圍：只在沒有組字中的注音時提供，
@@ -400,7 +415,7 @@ public final class InputEngine {
                 highlightedInPage: bilingual.highlighted,
                 pageIndex: 0,
                 pageCount: 1,
-                anchorUTF16: current.caretUTF16 - composer.display.utf16.count
+                anchorUTF16: current.caretUTF16 - composingText.utf16.count
             )
         }
         guard let sheet, !sheet.all.isEmpty else { return nil }
@@ -428,7 +443,7 @@ public final class InputEngine {
         guard let hint = numeric ?? englishHint else { return nil }
         let current = preedit()
         // 英文提示只跨組字中的注音；數字提示還要往回涵蓋這串期間已組出的字
-        var width = composer.display.utf16.count
+        var width = composingText.utf16.count
         if numeric != nil {
             let texts = elementTexts()
             for index in max(0, cursor - numericElements)..<cursor {
@@ -461,6 +476,26 @@ public final class InputEngine {
             return .consumed
         }
         return isIdle ? .ignored : .consumed
+    }
+
+    /// 英文段中的一般按鍵：原樣直出；但若偵測到其實在打注音（兩個查得到的音節、
+    /// 含數字聲調），就把這串已直出的按鍵退掉、結束英文段、改走注音組字
+    private func handleLiteralRunKey(_ ch: Character) -> Output {
+        guard englishHintEnabled, let keys = literalRunDetector.feed(ch) else {
+            insertLiteral(String(ch))
+            return .consumed
+        }
+        // 最後一鍵還沒直出；前面的必須確實是剛直出的那幾個字元才動手
+        let emitted = keys.dropLast().map { Element.literal(String($0)) }
+        guard cursor >= emitted.count,
+              Array(elements[(cursor - emitted.count)..<cursor]) == emitted else {
+            insertLiteral(String(ch))
+            return .consumed
+        }
+        for _ in emitted { removeElement(at: cursor - 1) }
+        isInLiteralRun = false
+        for key in keys { _ = handle(key == " " ? .space : .character(key)) }
+        return .consumed
     }
 
     /// 數字鍵串追蹤：組字器空著時以數字鍵起頭就開始記，之後連續的
@@ -547,7 +582,8 @@ public final class InputEngine {
             if let digit = ch.wholeNumberValue, (1...9).contains(digit) {
                 let page = current.highlighted / pageSize
                 let index = page * pageSize + digit - 1
-                if index < current.all.count { select(current.all[index]) }
+                // 只選本頁（每頁 7 字時，8、9 不該跳去選下一頁的字）
+                if digit <= pageSize, index < current.all.count { select(current.all[index]) }
                 return .consumed
             }
             // 繼續打字：關窗、照常組字
@@ -617,7 +653,11 @@ public final class InputEngine {
                 selectBilingual(current.choices[digit - 1])
                 return .consumed
             }
-            bilingual = nil  // 繼續打字：關窗、照常組字
+            // 繼續打字＝先上反白項，再照常處理這個鍵（不然 google 會被接著打的注音吃掉）
+            selectBilingual(current.choices[current.highlighted])
+            return nil
+        case .englishLiteral:
+            selectBilingual(current.choices[current.highlighted])
             return nil
         case .space, .arrowDown:
             current.highlighted = (current.highlighted + 1) % current.choices.count
@@ -754,7 +794,7 @@ public final class InputEngine {
     }
 
     private func committedText() -> String {
-        elementTexts().joined() + composer.display
+        elementTexts().joined() + composingText
     }
 
     /// 每個元素對應的顯示文字：詞值一字對一音時逐字分配，否則整段掛在首元素

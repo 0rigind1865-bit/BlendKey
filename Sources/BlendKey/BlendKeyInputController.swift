@@ -129,11 +129,19 @@ class BlendKeyInputController: IMKInputController {
             return false
         }
 
+        let wasInLiteralRun = engine.isInLiteralRun
         let output = engine.handle(key)
         if let commit = output.commitText {
             client.insertText(commit, replacementRange: kNoRange)
         }
         syncUI(engine, client: client)
+        // 英文段裡打注音被自動切回：閃「中」，跟 Shift 單擊一樣有回饋
+        if wasInLiteralRun, !engine.isInLiteralRun {
+            switch key {
+            case .character, .space: ModeHUD.shared.flash(chinese: true, near: caretLineRect(client))
+            default: break  // Esc／方向鍵結束英文段不閃
+            }
+        }
         return output.handled
     }
 
