@@ -1,7 +1,8 @@
 /// 反向偵測：英文模式下觀察按鍵流（不攔截），判斷使用者其實在打注音。
 ///
 /// 觸發條件（保守設計，避免英文誤判）：
-/// 連續 ≥2 個「零覆寫、詞庫查得到」的完整音節，且串中至少一個是數字聲調（ˊˇˋ˙）。
+/// (a) 單一個「零覆寫、詞庫查得到」且以數字聲調（ˊˇˋ˙）收尾的音節；
+/// (b) 或連續 ≥2 個查得到的完整音節，且串中至少一個是數字聲調。
 /// 英文透過大千鍵位幾乎必產生覆寫（hello → 3 次），且字母串中不會夾數字，
 /// 兩個條件都過的只會是真的注音。
 public struct ChineseTypingDetector: Sendable {
@@ -43,7 +44,10 @@ public struct ChineseTypingDetector: Sendable {
             pendingKeys = ""
             validStreak += 1
             if syllable.tone != .tone1 { sawDigitTone = true }
-            if validStreak >= 2 && sawDigitTone {
+            // 單字也行：第一個音節就是「零覆寫、查得到、數字聲調收尾」（su3）
+            // ponytail: 像 mp3 這類恰好拼得出來的英文會誤切，真有人抱怨再改回 ≥2
+            let lone = validStreak == 1 && syllable.tone != .tone1 && overwritesBefore == 0
+            if lone || (validStreak >= 2 && sawDigitTone) {
                 let keys = streakKeys
                 reset()
                 return keys

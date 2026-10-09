@@ -91,7 +91,9 @@ private func feedAll(_ detector: inout ChineseTypingDetector, _ keys: String) ->
 @Test func 英文模式打注音兩音節即切回並回報按鍵串() {
     var detector = makeChineseDetector()
     // ㄋㄧˇ ㄏㄠˇ：零覆寫＋數字聲調；回報整串按鍵供收回重組
-    #expect(feedAll(&detector, "su3cl3") == "su3cl3")
+    #expect(feedAll(&detector, "su3") == "su3")  // 一個字就切
+    var d2 = makeChineseDetector()
+    #expect(feedAll(&d2, "su ") == nil)  // 一聲收尾不算，仍需第二音節
 }
 
 @Test func 英文句子不誤觸() {
@@ -139,13 +141,13 @@ private func feedAll(_ detector: inout ChineseTypingDetector, _ keys: String) ->
     var detector = makeChineseDetector()
     _ = feedAll(&detector, "su3")   // 一個合法音節
     detector.reset()                 // 使用者按了方向鍵
-    #expect(feedAll(&detector, "cl3") == nil)  // 只剩一個音節，不觸發
+    #expect(feedAll(&detector, "c") == nil)  // 重新計數，未成音節不觸發
 }
 
 @Test func 雜訊後的按鍵串只含乾淨音節() {
     var detector = makeChineseDetector()
     // 「xy 」是雜訊（有覆寫、組不出已知讀音），觸發時只回報後面乾淨的兩個音節
-    #expect(feedAll(&detector, "xy su3cl3") == "su3cl3")
+    #expect(feedAll(&detector, "xy su3cl3") == "su3")
 }
 
 // MARK: - 長按直出
@@ -523,7 +525,7 @@ private func run(_ detector: inout ShiftTapDetector, _ events: [(ShiftTapDetecto
 @Test func 英文單字加空白不算注音音節() {
     // 英文模式打「google 你好」：舊版會把 google 一起收回重組
     var detector = ChineseTypingDetector { ["ㄋㄧˇ", "ㄏㄠˇ", "ㄍㄠ"].contains($0) }
-    #expect(feedAll(&detector, "google su3cl3") == "su3cl3")
+    #expect(feedAll(&detector, "google su3cl3") == "su3")
 }
 
 @Test func 英文段裡打注音自動回中文() {
