@@ -108,7 +108,7 @@ class BlendKeyInputController: IMKInputController {
 
         guard Self.chineseMode else {
             // 英文模式：放行但觀察——發現在打注音就切回中文並收回已打出的字母
-            return observeEnglishModeTyping(event, client: client)
+            return englishPassthrough(event, client: client)
         }
         guard let engine = ensureEngine() else { return false }  // 詞庫載入前放行
 
@@ -116,7 +116,7 @@ class BlendKeyInputController: IMKInputController {
         // 發現在打注音就當它沒亮（收回字母重組），直到使用者自己切換大寫。
         if event.modifierFlags.contains(.capsLock), !Self.capsLockOverridden {
             flushBeforePassthrough(engine, client: client)
-            return observeEnglishModeTyping(event, client: client)
+            return englishPassthrough(event, client: client)
         }
 
         // cmd／ctrl／opt 快捷鍵：先把組字區上屏，再放行給應用程式
@@ -143,6 +143,19 @@ class BlendKeyInputController: IMKInputController {
             }
         }
         return output.handled
+    }
+
+    /// 英文放行：照原廠，中/英鍵（Caps Lock）亮燈只是切英文，字母仍是小寫；要大寫按住 Shift。
+    private func englishPassthrough(_ event: NSEvent, client: IMKTextInput) -> Bool {
+        if observeEnglishModeTyping(event, client: client) { return true }
+        guard event.modifierFlags.contains(.capsLock),
+              event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
+              let chars = event.characters, chars.count == 1, let ch = chars.first,
+              ch.isASCII, ch.isLetter
+        else { return false }
+        let out = event.modifierFlags.contains(.shift) ? chars.uppercased() : chars.lowercased()
+        client.insertText(out, replacementRange: kNoRange)
+        return true
     }
 
     /// 英文模式的旁路觀察：放行並偵測。觸發時把已放行的注音字母收回、原地重組成中文。
