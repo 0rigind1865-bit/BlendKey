@@ -15,15 +15,23 @@ private struct CandidateView: View {
     private var horizontalBody: some View {
         HStack(spacing: 0) {
             ForEach(Array(sheet.items.enumerated()), id: \.offset) { index, item in
+                let highlighted = index == sheet.highlightedInPage
                 if index > 0 { Divider().frame(height: 14) }
                 HStack(spacing: 4) {
-                    if !item.label.isEmpty {
-                        Text(item.label).font(.system(size: 10)).foregroundStyle(.secondary)
-                    }
-                    Text(item.value).font(.system(size: 15))
+                    Text(item.label)
+                        .font(.system(size: 10).monospacedDigit())
+                        .foregroundStyle(highlighted ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
+                    Text(item.value)
+                        .font(.system(size: 15))
+                        .foregroundStyle(highlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
                 }
                 .padding(.horizontal, 9)
                 .padding(.vertical, 5)
+                .background {
+                    if highlighted {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.accentColor)
+                    }
+                }
                 .contentShape(Rectangle())
                 .onTapGesture { onSelect(index) }
             }

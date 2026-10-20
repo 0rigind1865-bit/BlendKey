@@ -107,16 +107,20 @@ private func engineWithHabits() -> (InputEngine, UserPhraseStore) {
     return (engine, store)
 }
 
-@Test func 打字中即時提示_橫排_Tab接受第一個並接龍() {
+@Test func 打字中即時提示_橫排_Tab兩下選第一個並接龍() {
     let (engine, _) = engineWithHabits()
     type(engine, "su3cl3")  // 你好
     let view = engine.associationView()
     #expect(view?.items.map(\.value) == ["世界"])
-    #expect(view?.items.first?.label == "⇥")
+    #expect(view?.items.first?.label == "1")
     #expect(view?.horizontal == true)
+    #expect(view?.anchorUTF16 == 0)  // 對齊最後一個詞「你好」的開頭
+    #expect(view?.highlightedInPage == -1)
     type(engine, "g")  // 打注音打到一半：提示維持，不閃
     #expect(engine.associationView()?.items.map(\.value) == ["世界"])
 
+    _ = engine.handle(.tab)  // 進入選擇：第一個反白
+    #expect(engine.associationView()?.highlightedInPage == 0)
     _ = engine.handle(.tab)  // 換掉打到一半的注音
     #expect(engine.preedit().text == "你好世界")
     #expect(engine.associationView()?.items.map(\.value) == ["是"])  // 接龍
@@ -132,6 +136,19 @@ private func engineWithHabits() -> (InputEngine, UserPhraseStore) {
     #expect(engine.associationView()?.items.map(\.value) == ["世界", "是"])
     _ = engine.click(itemAt: 1)
     #expect(engine.preedit().text == "你好是")
+    _ = engine.handle(.backspace)
+
+    _ = engine.handle(.tab)
+    _ = engine.handle(.character("2"))  // Tab＋2：選第二個
+    #expect(engine.preedit().text == "你好是")
+    _ = engine.handle(.backspace)
+    _ = engine.handle(.tab)
+    _ = engine.handle(.escape)  // Tab 後 Esc：只取消選擇
+    #expect(engine.preedit().text == "你好")
+    _ = engine.handle(.character("2"))  // 已取消：2 照常是注音 ㄉ
+    #expect(engine.preedit().text == "你好ㄉ")
+    _ = engine.handle(.escape)
+    type(engine, "su3cl3")
 
     _ = engine.handle(.arrowLeft)  // 回頭改字：不提示聯想
     #expect(engine.associationView() == nil)

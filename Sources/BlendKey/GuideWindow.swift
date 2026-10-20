@@ -23,7 +23,7 @@ private struct GuideView: View {
     private let quick = [
         Shortcut(keys: "`（數字 1 左邊）", detail: "打開符號表：…、——、《》、→、℃、①、NT$ 等，←→ 翻頁換類別；連按兩下輸出 ` 本身"),
         Shortcut(keys: "今天＋空白", detail: "候選窗多出 2026-10-20、民國年、星期等寫法；明天、昨天、後天、前天也可以，打「現在」出時間"),
-        Shortcut(keys: "Tab（聯想詞）", detail: "打字時游標旁會橫排提示你平常最常接著打的詞。Tab 放進第一個、可以一路接下去；其他的用滑鼠點；要送出就再按 Enter。不想要就照常打字"),
+        Shortcut(keys: "Tab＋數字（聯想詞）", detail: "打字時會橫排提示你平常最常接著打的詞。先按 Tab，再按 1〜5 選（Tab 兩下＝第一個），也可以用滑鼠點；選完可以一路接下去，要送出就按 Enter。不想要就照常打字"),
         Shortcut(keys: "數字＋Tab＋空白", detail: "打 1234 按 Tab，再按空白：可換成 1,234、壹仟貳佰參拾肆、新臺幣…元整、一千二百三十四"),
     ]
 

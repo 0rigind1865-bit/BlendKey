@@ -102,12 +102,15 @@ public final class InputEngine {
     private var bilingual: BilingualSheet?
 
     /// 聯想詞（像手機鍵盤）：組字中依「你打過的詞語接續」提示下一個詞。
-    /// Tab 接受第一個、滑鼠點任一個。組字中的 Tab 原本就不送給 app（沒有別的用途），
+    /// 先按 Tab 進入選擇（第一個反白），再按 1〜5 選、或再按一次 Tab 選反白的；滑鼠點任一個。
+    /// 組字中的 Tab 原本就不送給 app（沒有別的用途），
     /// 而且跟英文／數字提示同一個規則「Tab＝接受小窗的提示」，所以不和任何快捷鍵衝突。
     /// 不另設「接受並送出」鍵：Enter 的組合鍵各 app 都有用途（Shift+Enter 是聊天軟體換行），
     /// 打完字習慣按它的人會被多塞一個詞。要送出就 Tab 再 Enter。
     /// ponytail: 上屏後不提示——那時 Tab 屬於 app（縮排、換欄），只剩滑鼠能選反而礙眼
     public var associationsEnabled = true
+    /// 按過 Tab、等使用者選第幾個；任何其他按鍵或組字區變動都會取消
+    private var associationArmed = false
 
     /// 全形標點開關（偏好設定）
     public var fullWidthPunctuation = true
@@ -222,6 +225,9 @@ public final class InputEngine {
         case .character, .space, .tab, .enter: break  // 這些要用到數字追蹤；character/space 自行管理
         default: cancelNumericRun()
         }
+        if associationArmed, let output = handleArmedAssociations(key) {
+            return output
+        }
         if bilingual != nil, let output = handleInBilingual(key) {
             return output
         }
@@ -305,8 +311,8 @@ public final class InputEngine {
             openSheet()
             return .consumed
         case .tab:
-            if let word = visibleAssociations.first {
-                acceptAssociation(word)
+            if !visibleAssociations.isEmpty {
+                associationArmed = true
                 return .consumed
             }
             if numberHint != nil {
@@ -456,14 +462,16 @@ public final class InputEngine {
         )
     }
 
-    /// 聯想詞提示的呈現（第一個標 ⇥、其餘滑鼠點），對齊游標
+    /// 聯想詞提示的呈現（橫排、標 1〜5；按了 Tab 第一個反白）
     public func associationView() -> SheetView? {
         let shown = visibleAssociations
         guard !shown.isEmpty else { return nil }
         return SheetView(
-            items: shown.enumerated().map { SheetView.Item(label: $0.offset == 0 ? "⇥" : "", value: $0.element) },
-            highlightedInPage: -1, pageIndex: 0, pageCount: 1,
-            anchorUTF16: preedit().caretUTF16, horizontal: true
+            items: shown.enumerated().map { SheetView.Item(label: "\($0.offset + 1)", value: $0.element) },
+            highlightedInPage: associationArmed ? 0 : -1, pageIndex: 0, pageCount: 1,
+            // 對齊最後一個詞的開頭（同英文提示）。組字文字的「結尾」位置很多 app 回報不出來，窗會跑掉
+            anchorUTF16: walked.last.map { elementTexts()[..<$0.start].reduce(0) { $0 + $1.utf16.count } } ?? 0,
+            horizontal: true
         )
     }
 
@@ -710,11 +718,31 @@ public final class InputEngine {
         return store.nextWords(after: last.value, limit: 5)
     }
 
+    private func handleArmedAssociations(_ key: KeyInput) -> Output? {
+        associationArmed = false
+        let shown = visibleAssociations
+        guard !shown.isEmpty else { return nil }
+        switch key {
+        case .character(let ch):
+            guard let digit = ch.wholeNumberValue, (1...shown.count).contains(digit) else { return nil }
+            acceptAssociation(shown[digit - 1])
+            return .consumed
+        case .tab:
+            acceptAssociation(shown[0])  // Tab 兩下＝第一個
+            return .consumed
+        case .escape:
+            return .consumed  // 只取消選擇，組字區不動
+        default:
+            return nil  // 其他鍵：取消選擇、照常處理
+        }
+    }
+
     /// 打到一半的注音當作就是要打這個詞，換成它
     /// ponytail: 以直出片段插入（接續表只存詞、不存讀音），插入後不能再用 ↓ 改字；要能改得在接續表存讀音
     private func acceptAssociation(_ word: String) {
         composer.clear()
         cancelNumericRun()
+        associationArmed = false
         insertLiteral(word)
     }
 
@@ -926,6 +954,7 @@ public final class InputEngine {
         composer.clear()
         sheet = nil
         bilingual = nil
+        associationArmed = false
         isInLiteralRun = false
         cancelNumericRun()
     }
