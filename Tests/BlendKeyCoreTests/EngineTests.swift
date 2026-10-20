@@ -99,8 +99,8 @@ private func type(_ engine: InputEngine, _ keys: String) {
     _ = engine.handle(.englishLiteral("K"))
     engine.endLiteralRun()  // Shift 單擊結束英文接續段
     type(engine, "cl3")
-    #expect(engine.preedit().text == "你OK好")
-    #expect(engine.handle(.enter).commitText == "你OK好")
+    #expect(engine.preedit().text == "你 OK 好")
+    #expect(engine.handle(.enter).commitText == "你 OK 好")
 }
 
 @Test func 詞內移動游標也看得見反白變化() {

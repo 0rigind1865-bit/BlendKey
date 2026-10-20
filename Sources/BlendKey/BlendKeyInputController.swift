@@ -335,6 +335,7 @@ class BlendKeyInputController: IMKInputController {
             engine.englishDetector = LexiconStore.englishDetector
             engine.englishHintEnabled = defaults.bool(forKey: SettingKey.englishHint)
             engine.fullWidthPunctuation = defaults.bool(forKey: SettingKey.fullWidthPunctuation)
+            engine.autoSpacing = defaults.bool(forKey: SettingKey.autoSpacing)
             engine.pageSize = defaults.integer(forKey: SettingKey.pageSize)
             let fuzzy = defaults.bool(forKey: SettingKey.fuzzyReading)
             if engine.fuzzyReadingEnabled != fuzzy { engine.fuzzyReadingEnabled = fuzzy }

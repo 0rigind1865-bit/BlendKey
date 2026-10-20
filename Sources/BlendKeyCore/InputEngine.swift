@@ -101,6 +101,8 @@ public final class InputEngine {
 
     /// 全形標點開關（偏好設定）
     public var fullWidthPunctuation = true
+    /// 中英之間自動加空白開關（偏好設定）：我愛mac → 我愛 mac
+    public var autoSpacing = true
     /// 相似音修正開關（偏好設定）：ㄓㄗ、ㄔㄘ、ㄕㄙ、ㄌㄋ、ㄈㄏ、ㄣㄥ、ㄢㄤ 互通
     public var fuzzyReadingEnabled = false {
         didSet {
@@ -841,7 +843,25 @@ public final class InputEngine {
     }
 
     private func committedText() -> String {
-        elementTexts().joined() + composingText
+        spaced(elementTexts() + [composingText]).joined()
+    }
+
+    /// 漢字與英數字相鄰處補一個空白（加在後一段開頭）。已有空白就不再加，重複套用結果不變。
+    /// ponytail: 只看組字區內部；跟 app 裡已上屏的前文之間不補（要讀 client 前文才做得到）
+    private func spaced(_ texts: [String]) -> [String] {
+        guard autoSpacing else { return texts }
+        func isHan(_ ch: Character) -> Bool { ch.unicodeScalars.first?.properties.isIdeographic == true }
+        func isAlnum(_ ch: Character) -> Bool { ch.isASCII && (ch.isLetter || ch.isNumber) }
+        var result = texts
+        var previous: Character?
+        for index in result.indices {
+            guard let first = result[index].first else { continue }
+            if let previous, (isHan(previous) && isAlnum(first)) || (isAlnum(previous) && isHan(first)) {
+                result[index] = " " + result[index]
+            }
+            previous = result[index].last
+        }
+        return result
     }
 
     /// 每個元素對應的顯示文字：詞值一字對一音時逐字分配，否則整段掛在首元素
@@ -857,7 +877,7 @@ public final class InputEngine {
                 texts[segment.start] = segment.value
             }
         }
-        return texts
+        return spaced(texts)
     }
 
     /// 游標所在的詞段（按 ↓ 開候選的對象）

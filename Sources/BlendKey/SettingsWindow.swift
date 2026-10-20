@@ -6,6 +6,7 @@ enum SettingKey {
     static let shiftToggle = "shiftToggle"
     static let englishHint = "englishHint"
     static let fullWidthPunctuation = "fullWidthPunctuation"
+    static let autoSpacing = "autoSpacing"
     static let pageSize = "pageSize"
     static let fuzzyReading = "fuzzyReading"
 
@@ -14,6 +15,7 @@ enum SettingKey {
             shiftToggle: true,
             englishHint: true,
             fullWidthPunctuation: true,
+            autoSpacing: true,
             pageSize: 9,
             fuzzyReading: false,
         ])
@@ -24,6 +26,7 @@ private struct SettingsView: View {
     @AppStorage(SettingKey.shiftToggle) private var shiftToggle = true
     @AppStorage(SettingKey.englishHint) private var englishHint = true
     @AppStorage(SettingKey.fullWidthPunctuation) private var fullWidthPunctuation = true
+    @AppStorage(SettingKey.autoSpacing) private var autoSpacing = true
     @AppStorage(SettingKey.pageSize) private var pageSize = 9
     @AppStorage(SettingKey.fuzzyReading) private var fuzzyReading = false
     @State private var showingResetAlert = false
@@ -38,6 +41,7 @@ private struct SettingsView: View {
             Section("中英混輸") {
                 Toggle("Shift 單擊切換中／英", isOn: $shiftToggle)
                 Toggle("中英自動偵測（中打英 Tab 上字；英打注音自動切回）", isOn: $englishHint)
+                Toggle("中英之間自動加空白（我愛 mac）", isOn: $autoSpacing)
                 Text("Shift＋字母永遠直接輸出英文字母。")
                     .font(.callout)
                     .foregroundStyle(.secondary)

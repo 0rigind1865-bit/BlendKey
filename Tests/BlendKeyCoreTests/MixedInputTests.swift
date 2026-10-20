@@ -161,7 +161,7 @@ private func feedAll(_ detector: inout ChineseTypingDetector, _ keys: String) ->
     #expect(engine.preedit().text == "g")
     engine.endLiteralRun()                      // Shift 單擊結束接續段
     for key in "su3" { _ = engine.handle(.character(key)) }
-    #expect(engine.handle(.enter).commitText == "g你")
+    #expect(engine.handle(.enter).commitText == "g 你")
 }
 
 @Test func 長按數字直出數字() {
@@ -275,7 +275,7 @@ private func run(_ detector: inout ShiftTapDetector, _ events: [(ShiftTapDetecto
     #expect(engine.preedit().text == "Google")
     engine.endLiteralRun()                            // Shift 單擊結束
     for key in "su3" { _ = engine.handle(.character(key)) }
-    #expect(engine.handle(.enter).commitText == "Google你")
+    #expect(engine.handle(.enter).commitText == "Google 你")
 }
 
 @Test func 接續段中空白與標點原樣半形() {
@@ -298,7 +298,7 @@ private func run(_ detector: inout ShiftTapDetector, _ events: [(ShiftTapDetecto
     _ = engine.handle(.englishLiteral("A"))
     _ = engine.handle(.escape)                        // 結束段（字母保留）
     for key in "su3" { _ = engine.handle(.character(key)) }
-    #expect(engine.preedit().text == "A你")
+    #expect(engine.preedit().text == "A 你")
 }
 
 @Test func 退光接續段字母自動回注音() {
@@ -352,7 +352,7 @@ private func run(_ detector: inout ShiftTapDetector, _ events: [(ShiftTapDetecto
     for key in "su3" { _ = engine.handle(.character(key)) }  // 你
     for key in "1.5" { _ = engine.handle(.character(key)) }
     _ = engine.handle(.tab)
-    #expect(engine.handle(.enter).commitText == "你1.5")
+    #expect(engine.handle(.enter).commitText == "你 1.5")
 }
 
 @Test func 打八不受數字追蹤影響() {
@@ -509,7 +509,7 @@ private func run(_ detector: inout ShiftTapDetector, _ events: [(ShiftTapDetecto
     for key in "google" { _ = engine.handle(.character(key)) }
     _ = engine.handle(.space)
     for key in "su3" { _ = engine.handle(.character(key)) }
-    #expect(engine.handle(.enter).commitText == "google你")
+    #expect(engine.handle(.enter).commitText == "google 你")
 }
 
 @Test func 每頁7字時數字8不會選到下一頁() {
@@ -535,4 +535,28 @@ private func run(_ detector: inout ShiftTapDetector, _ events: [(ShiftTapDetecto
     for key in "su3cl3" { _ = engine.handle(.character(key)) }
     #expect(!engine.isInLiteralRun)
     #expect(engine.handle(.enter).commitText == "Google 你好")
+}
+
+// MARK: - 中英自動空白
+
+@Test func 中英之間自動加空白() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    for key in "su3" { _ = engine.handle(.character(key)) }   // 你
+    _ = engine.handle(.englishLiteral("O"))
+    _ = engine.handle(.character("K"))
+    #expect(engine.preedit().text == "你 OK")
+    engine.endLiteralRun()
+    for key in "cl3" { _ = engine.handle(.character(key)) }   // 好
+    #expect(engine.handle(.enter).commitText == "你 OK 好")
+}
+
+@Test func 已有空白不重複加_關閉後不加() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    for key in "su3" { _ = engine.handle(.character(key)) }
+    _ = engine.handle(.englishLiteral("O"))
+    _ = engine.handle(.space)
+    _ = engine.handle(.character("K"))
+    #expect(engine.preedit().text == "你 O K")
+    engine.autoSpacing = false
+    #expect(engine.handle(.enter).commitText == "你O K")
 }
