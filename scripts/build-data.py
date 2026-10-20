@@ -82,7 +82,33 @@ def score(key, c):
     return s - 0.0001 * char_rank.get(key, 0)
 
 
-lines = [f"{r} {w} {score((r, w), c):.6f}" for (r, w), c in entries.items()]
+scores = {key: score(key, c) for key, c in entries.items()}
+
+# 常用詞優先（scripts/preferred-words.txt）：語料偏一般文章，工作用語常輸給同音詞
+# （程式→城市、匯出→會出），或根本沒收（截圖、蝦皮）。表上的詞提到同讀音第一名，
+# 只領先 0.01——使用者選一次別的字，學習加權（≥1.39）就翻回去。
+NEW_WORD_SCORE = -12.0  # 詞庫沒有的詞：約當常見雙字詞，穩贏拆成單字
+by_reading = collections.defaultdict(list)
+for (r, w), s in scores.items():
+    by_reading[r].append((s, w))
+preferred = pathlib.Path(__file__).with_name("preferred-words.txt")
+for line in preferred.read_text().splitlines():
+    parts = line.split()
+    if not parts or parts[0].startswith("#"):
+        continue
+    word, syls = parts[0], parts[1:]
+    if syls:
+        key = ("-".join(syls), word)
+        scores.setdefault(key, NEW_WORD_SCORE)
+        by_reading[key[0]].append((scores[key], word))
+    keys = [k for k in scores if k[1] == word] if not syls else [key]
+    if not keys:
+        print(f"警告：{word} 不在詞庫，請在 preferred-words.txt 補上注音")
+    for r, w in keys:
+        rival = max((s for s, other in by_reading[r] if other != w), default=-math.inf)
+        scores[(r, w)] = max(scores[(r, w)], rival + 0.01)
+
+lines = [f"{r} {w} {s:.6f}" for (r, w), s in scores.items()]
 lines.sort()
 OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text("# format org.openvanilla.mcbopomofo.sorted\n" + "\n".join(lines) + "\n")
