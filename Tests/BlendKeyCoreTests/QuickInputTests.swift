@@ -239,6 +239,16 @@ private func engineWithHabits() -> (InputEngine, UserPhraseStore) {
     #expect(engine.sheetView()?.items.map(\.value).contains("你好") == true)
 }
 
+@Test func AI校正可以跨過標點_標點本身不改() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    type(engine, "su3<cl3")  // 你，好
+    #expect(engine.preedit().text == "你，好")
+    #expect(engine.correctionTarget?.readings == ["ㄋㄧˇ", nil, "ㄏㄠˇ"])
+    #expect(engine.applyCorrection("妳，好", to: "你，好"))
+    #expect(engine.preedit().text == "妳，好")
+    #expect(!engine.applyCorrection("妳。好", to: "妳，好"))  // 標點不能改
+}
+
 @Test func AI校正不碰夾英文的組字區() {
     let engine = InputEngine(lexicon: 測試詞庫)
     type(engine, "su3")

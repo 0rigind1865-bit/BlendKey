@@ -737,19 +737,15 @@ public final class InputEngine {
             && cursor == elements.count && !elements.isEmpty
     }
 
-    /// AI 校正的對象：組好的字與每個字的注音。只在「每個音節剛好一個字」時提供
-    /// （夾了英文、數字等直出片段就不校正），游標要在句尾（回頭改字時不動它）。
-    public var correctionTarget: (text: String, readings: [String])? {
+    /// AI 校正的對象：組好的字與每個字的注音（標點等直出的單字為 nil＝不能改）。
+    /// 每個元素剛好一個字時才提供（夾了 google 這種多字的英文就不校正），
+    /// 游標要在句尾（回頭改字時不動它）。
+    public var correctionTarget: (text: String, readings: [String?])? {
         guard composer.isEmpty, sheet == nil, bilingual == nil, !isInLiteralRun,
               !elements.isEmpty, cursor == elements.count else { return nil }
-        var readings: [String] = []
-        for element in elements {
-            guard case .reading(let reading) = element else { return nil }
-            readings.append(reading)
-        }
         let texts = elementTexts()
         guard texts.allSatisfy({ $0.count == 1 }) else { return nil }
-        return (texts.joined(), readings)
+        return (texts.joined(), elements.map(\.readingValue))
     }
 
     /// 套用 AI 校正：組字區還是同一句、字數一樣才套用；只採用「同音」的改動（保險），
@@ -762,13 +758,15 @@ public final class InputEngine {
         let old = Array(original), proposed = Array(corrected)
         var chars = old
         for index in old.indices where proposed[index] != old[index] {
+            guard let reading = target.readings[index] else { continue }  // 標點等直出的字不改
             let candidate = String(proposed[index])
-            if lexicon.unigrams(target.readings[index]).contains(where: { $0.value == candidate }) {
+            if lexicon.unigrams(reading).contains(where: { $0.value == candidate }) {
                 chars[index] = proposed[index]
             }
         }
         guard chars != old else { return false }
-        for segment in walked where (segment.start..<segment.end).contains(where: { chars[$0] != old[$0] }) {
+        for segment in walked where segment.reading != nil
+            && (segment.start..<segment.end).contains(where: { chars[$0] != old[$0] }) {
             pins.removeAll { $0.start < segment.end && segment.start < $0.end }
             pins.append(DecodedSegment(
                 start: segment.start, length: segment.length,

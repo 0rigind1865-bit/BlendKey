@@ -88,7 +88,9 @@ enum SmartInput {
             "n_predict": 28,  // 約 30 字以內；寫越多越慢（約 15 字／秒）
             "stop": ["\n", "。", "！", "？"],
         ]) { content in
-            CompletionFilter.clean(content, text: text, before: before).map(completion)
+            let cleaned = CompletionFilter.clean(content, text: text, before: before)
+            Log.general.info("AI 補句：「\(text, privacy: .public)」→「\(content, privacy: .public)」\(cleaned == nil ? "（過濾掉）" : "", privacy: .public)")
+            cleaned.map(completion)
         }
     }
 
@@ -100,7 +102,12 @@ enum SmartInput {
             "n_predict": (before.count + text.count) * 2 + 8,
             "stop": ["\n"],
         ]) { content in
-            guard content.hasPrefix(before) else { return }
+            // ponytail: 除錯期間把內容記到系統紀錄（只在本機），確定穩定後改回 .private
+            Log.general.info("AI 校正：送「\(text, privacy: .public)」→ 回「\(content, privacy: .public)」")
+            guard content.hasPrefix(before) else {
+                Log.general.info("AI 校正：上文被改動，不採用")
+                return
+            }
             completion(String(content.dropFirst(before.count))
                 .filter { !$0.isWhitespace && !"，。！？、：；「」".contains($0) })
         }

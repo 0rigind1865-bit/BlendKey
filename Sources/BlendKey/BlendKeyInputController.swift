@@ -427,11 +427,16 @@ class BlendKeyInputController: IMKInputController {
         let before = textBeforeComposition(client)
         guard (before + target.text).filter({ !$0.isWhitespace }).count >= Self.minimumCompletionContext else {
             SmartInput.cancel(.correction)
+            Log.general.info("AI 校正：字數不到 \(Self.minimumCompletionContext, privacy: .public) 個，先不問")
             return
         }
         Self.lastCorrectionRequest = target.text
         SmartInput.correct(text: target.text, before: before) { [weak self] corrected in
-            guard let self, let engine = self.engine, engine.applyCorrection(corrected, to: target.text) else { return }
+            guard let self, let engine = self.engine else { return }
+            guard engine.applyCorrection(corrected, to: target.text) else {
+                Log.general.info("AI 校正：沒有改動（沒錯字、不同音或組字區已變）")
+                return
+            }
             Log.general.info("AI 校正：已改正")
             Self.lastCorrectionRequest = engine.correctionTarget?.text  // 改好的句子不再重問
             self.syncUI(engine, client: client)
