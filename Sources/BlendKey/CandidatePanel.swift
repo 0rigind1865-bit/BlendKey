@@ -3,11 +3,36 @@ import SwiftUI
 import BlendKeyCore
 
 /// 候選字窗內容（無狀態，每次呈現直接換 rootView）：
-/// 直式上下清單，比照系統內建注音的樣式
+/// 直式上下清單（比照系統內建注音），聯想詞則是橫式建議列（像手機鍵盤）。每一項都可以用滑鼠點。
 private struct CandidateView: View {
     let sheet: InputEngine.SheetView
+    let onSelect: (Int) -> Void
 
     var body: some View {
+        if sheet.horizontal { horizontalBody } else { verticalBody }
+    }
+
+    private var horizontalBody: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(sheet.items.enumerated()), id: \.offset) { index, item in
+                if index > 0 { Divider().frame(height: 14) }
+                HStack(spacing: 4) {
+                    if !item.label.isEmpty {
+                        Text(item.label).font(.system(size: 10)).foregroundStyle(.secondary)
+                    }
+                    Text(item.value).font(.system(size: 15))
+                }
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .contentShape(Rectangle())
+                .onTapGesture { onSelect(index) }
+            }
+        }
+        .padding(3)
+        .fixedSize()
+    }
+
+    private var verticalBody: some View {
         VStack(alignment: .leading, spacing: 1) {
             ForEach(Array(sheet.items.enumerated()), id: \.offset) { index, item in
                 let highlighted = index == sheet.highlightedInPage
@@ -15,8 +40,7 @@ private struct CandidateView: View {
                     Text(item.label)
                         .font(.system(size: 11).monospacedDigit())
                         .foregroundStyle(highlighted ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
-                        .fixedSize()
-                        .frame(minWidth: 14, alignment: .trailing)  // 聯想詞標籤「⇧1」較寬
+                        .frame(width: 14, alignment: .trailing)
                     Text(item.value)
                         .font(.system(size: 17))
                         .foregroundStyle(highlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
@@ -31,6 +55,8 @@ private struct CandidateView: View {
                             .fill(Color.accentColor)
                     }
                 }
+                .contentShape(Rectangle())
+                .onTapGesture { onSelect(index) }
             }
             if sheet.pageCount > 1 {
                 Text("\(sheet.pageIndex + 1)/\(sheet.pageCount) ⇠⇢")
@@ -47,12 +73,17 @@ private struct CandidateView: View {
     }
 }
 
+/// 候選窗不會成為焦點視窗（不能搶走 app 的輸入框），所以第一下點擊就要生效
+private final class ClickableHostingView: NSHostingView<AnyView> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
 /// 候選字窗：全行程單例、常駐重複使用（macOS 26 的 NSWindow 記憶體問題對策）。
 /// 由「作用中控制器」持有 token，避免 Safari 分頁切換時舊實例晚到的 deactivate 關掉新窗。
 final class CandidatePanel: NSPanel {
     static let shared = CandidatePanel()
 
-    private let hosting = NSHostingView(rootView: AnyView(EmptyView()))
+    private let hosting = ClickableHostingView(rootView: AnyView(EmptyView()))
     private var ownerID: ObjectIdentifier?
 
     private init() {
@@ -93,9 +124,13 @@ final class CandidatePanel: NSPanel {
     /// - Parameters:
     ///   - lineRect: 游標所在行的螢幕矩形（IMKTextInput 提供）
     ///   - clientLevel: client 視窗層級，候選窗要壓在它上面
-    func present(_ sheet: InputEngine.SheetView, near lineRect: NSRect, clientLevel: Int32, owner: AnyObject) {
+    ///   - onSelect: 滑鼠點了第幾項（本頁內，從 0 起）
+    func present(
+        _ sheet: InputEngine.SheetView, near lineRect: NSRect, clientLevel: Int32, owner: AnyObject,
+        onSelect: @escaping (Int) -> Void
+    ) {
         ownerID = ObjectIdentifier(owner)
-        hosting.rootView = AnyView(CandidateView(sheet: sheet))
+        hosting.rootView = AnyView(CandidateView(sheet: sheet, onSelect: onSelect))
         let size = hosting.fittingSize
         setContentSize(size)
         level = NSWindow.Level(rawValue: max(Int(clientLevel) + 1, NSWindow.Level.popUpMenu.rawValue))
@@ -114,5 +149,6 @@ final class CandidatePanel: NSPanel {
         guard ownerID == nil || ownerID == ObjectIdentifier(owner) else { return }
         orderOut(nil)
         ownerID = nil
+        hosting.rootView = AnyView(EmptyView())  // 放掉點擊回呼抓住的 client
     }
 }

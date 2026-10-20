@@ -287,7 +287,8 @@ class BlendKeyInputController: IMKInputController {
 
     private func keyInput(from event: NSEvent) -> KeyInput? {
         switch Int(event.keyCode) {
-        case kVK_Return, kVK_ANSI_KeypadEnter: return .enter
+        case kVK_Return, kVK_ANSI_KeypadEnter:
+            return event.modifierFlags.contains(.shift) ? .shiftEnter : .enter
         case kVK_Escape: return .escape
         case kVK_Delete: return .backspace
         case kVK_Tab: return .tab
@@ -359,7 +360,15 @@ class BlendKeyInputController: IMKInputController {
             client.attributes(forCharacterIndex: sheet.anchorUTF16, lineHeightRectangle: &lineRect)
             CandidatePanel.shared.present(
                 sheet, near: lineRect, clientLevel: client.windowLevel(), owner: self
-            )
+            ) { [weak self] index in
+                // 滑鼠點選：跟按對應的鍵一樣走引擎，結果照常寫回 client
+                guard let self, let engine = self.engine else { return }
+                let output = engine.click(itemAt: index)
+                if let commit = output.commitText {
+                    client.insertText(commit, replacementRange: self.kNoRange)
+                }
+                self.syncUI(engine, client: client)
+            }
         } else {
             CandidatePanel.shared.dismiss(owner: self)
         }
