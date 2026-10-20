@@ -145,11 +145,11 @@ public enum CompletionFilter {
             result.removeFirst(given.count)  // 把原文重打一遍
             break
         }
-        // 只留到第一個句尾或換行：灰字補一小段就好
+        // 補到這句話結束（第一個句尾或換行），中間的逗號保留
         if let end = result.firstIndex(where: { "。！？\n".contains($0) }) {
             result = String(result[..<end])
         }
-        result = String(result.prefix(12)).trimmingCharacters(in: .whitespaces)
+        result = String(result.prefix(30)).trimmingCharacters(in: .whitespaces)
         guard !result.isEmpty else { return nil }
         // ponytail: 擋「接成網路文章」與鬼打牆的粗略規則，實際用下來再調
         // （續寫型模型沒上下文時會接出「庫>都市醫武狂尊>第1」這種網頁殘渣）

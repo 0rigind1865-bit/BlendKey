@@ -79,13 +79,14 @@ enum SmartInput {
         tasks.removeValue(forKey: kind)?.cancel()
     }
 
-    /// AI 補句：停手 0.25 秒後問，續寫型模型直接把「上文＋組字區」接下去。
+    /// AI 補句：停手 0.25 秒後問，續寫型模型直接把「上文＋組字區」接下去，補到這句話結束
+    /// （逗號不停；只停在句尾，使用者要的是一次補完整句）。
     /// completion 在主執行緒回呼（被過濾掉、失敗、逾時就不回呼）。
     static func complete(text: String, before: String, completion: @escaping (String) -> Void) {
         schedule(.completion, after: 0.25, body: [
             "prompt": before + text,
-            "n_predict": 12,
-            "stop": ["\n", "。", "！", "？", "，"],
+            "n_predict": 28,  // 約 30 字以內；寫越多越慢（約 15 字／秒）
+            "stop": ["\n", "。", "！", "？"],
         ]) { content in
             CompletionFilter.clean(content, text: text, before: before).map(completion)
         }
