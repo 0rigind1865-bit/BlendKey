@@ -26,5 +26,5 @@ if [ -f Resources/data/data.txt ]; then
   cp Resources/data/data.txt Resources/data/LICENSE-* "$APP/Contents/Resources/data/" 2>/dev/null || true
 fi
 
-codesign --force --options runtime --sign "$IDENTITY" "$APP"
+codesign --force --options runtime --entitlements Resources/BlendKey.entitlements --sign "$IDENTITY" "$APP"
 echo "完成：$APP"

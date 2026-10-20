@@ -30,8 +30,12 @@
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 jielin — MIT License；詞庫源自小麥注音（MIT）</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>語音輸入：單按右 Option 時用麥克風聽你說話，在本機辨識成文字。</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>語音輸入：把你說的話在本機轉成文字，不連網。</string>
 	<key>TISIconIsTemplate</key>
 	<true/>
 	<key>UIDesignRequiresCompatibility</key>

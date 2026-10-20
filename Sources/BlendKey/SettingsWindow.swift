@@ -13,6 +13,7 @@ enum SettingKey {
     static let smartInput = "smartInput"  // 智慧輸入總開關：打勾才啟動 Breeze
     static let aiCompletion = "aiCompletion"
     static let smartCorrection = "smartCorrection"
+    static let voiceInput = "voiceInput"
 
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [
@@ -26,6 +27,7 @@ enum SettingKey {
             smartInput: false,
             aiCompletion: true,
             smartCorrection: true,
+            voiceInput: true,
         ])
     }
 }
@@ -41,6 +43,7 @@ private struct SettingsView: View {
     @AppStorage(SettingKey.smartInput) private var smartInput = false
     @AppStorage(SettingKey.aiCompletion) private var aiCompletion = true
     @AppStorage(SettingKey.smartCorrection) private var smartCorrection = true
+    @AppStorage(SettingKey.voiceInput) private var voiceInput = true
     @State private var showingResetAlert = false
     @State private var didReset = false
 
@@ -86,6 +89,12 @@ private struct SettingsView: View {
                     Text("9").tag(9)
                 }
                 .pickerStyle(.segmented)
+            }
+            Section("語音輸入") {
+                Toggle("單按右 Option 開始講話，再按一下結束", isOn: $voiceInput)
+                Text("打一半的字會先送出，講的話接在後面。Esc 取消。使用 Mac 內建語音辨識，在本機執行、不連網。")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
             Section("智慧輸入（實驗）") {
                 Toggle("啟用智慧輸入（Breeze）", isOn: $smartInput)

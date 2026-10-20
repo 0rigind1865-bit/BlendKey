@@ -11,6 +11,8 @@ class BlendKeyInputController: IMKInputController {
     /// 中／英模式是整個輸入法共享的（跨應用程式一致）
     private static var chineseMode = true
     private static var shiftDetector = ShiftTapDetector()
+    /// 右 Option 單擊＝語音輸入。偵測器只看 keyCode，借用 Shift 單擊同一台狀態機
+    private static var optionDetector = ShiftTapDetector()
     /// 反向偵測：英文模式下發現在打注音就自動切回中文
     private static var chineseDetector = ChineseTypingDetector { reading in
         LexiconStore.lexicon?.unigrams(reading).isEmpty == false
@@ -96,7 +98,11 @@ class BlendKeyInputController: IMKInputController {
     }
 
     override func commitComposition(_ sender: Any!) {
-        guard let client = sender as? IMKTextInput, let engine else { return }
+        guard let client = sender as? IMKTextInput else { return }
+        if VoiceInput.shared.isListening {
+            endVoice(VoiceInput.shared.finishNow(), client: client)
+        }
+        guard let engine else { return }
         if let text = engine.flush() {
             client.insertText(text, replacementRange: kNoRange)
         }
@@ -112,6 +118,22 @@ class BlendKeyInputController: IMKInputController {
         }
         guard event.type == .keyDown else { return false }
         Self.shiftDetector.noteKeyDown()
+        Self.optionDetector.noteKeyDown()
+
+        // 語音輸入中按任何鍵：先把聽到的字上屏。Esc＝不要了；Enter＝只上屏；其他鍵照常處理
+        if VoiceInput.shared.isListening {
+            let heard = VoiceInput.shared.finishNow()
+            switch Int(event.keyCode) {
+            case kVK_Escape:
+                endVoice("", client: client)
+                return true
+            case kVK_Return, kVK_ANSI_KeypadEnter:
+                endVoice(heard, client: client)
+                return true
+            default:
+                endVoice(heard, client: client)
+            }
+        }
 
         guard Self.chineseMode else {
             // 英文模式：放行但觀察——發現在打注音就切回中文並收回已打出的字母
@@ -249,10 +271,21 @@ class BlendKeyInputController: IMKInputController {
             ModeHUD.shared.flash(chinese: !capsOn && Self.chineseMode, near: caretLineRect(client))
             return
         }
-        guard UserDefaults.standard.bool(forKey: SettingKey.shiftToggle) else { return }
         let flags = event.modifierFlags
             .intersection(.deviceIndependentFlagsMask)
             .subtracting(.capsLock)
+        if UserDefaults.standard.bool(forKey: SettingKey.voiceInput) {
+            let isRightOption = event.keyCode == UInt16(kVK_RightOption)
+            let optionEvent: ShiftTapDetector.FlagsEvent =
+                isRightOption && flags == .option ? .shiftDown(keyCode: event.keyCode)
+                : isRightOption && flags.isEmpty ? .allReleased(keyCode: event.keyCode)
+                : .other
+            if Self.optionDetector.process(optionEvent, at: event.timestamp) {
+                toggleVoice(client)
+                return
+            }
+        }
+        guard UserDefaults.standard.bool(forKey: SettingKey.shiftToggle) else { return }
         let isShiftKey = event.keyCode == 56 || event.keyCode == 60  // 左／右 Shift
 
         let flagsEvent: ShiftTapDetector.FlagsEvent
@@ -282,6 +315,41 @@ class BlendKeyInputController: IMKInputController {
             syncUI(engine, client: client)
         }
         ModeHUD.shared.flash(chinese: Self.chineseMode, near: caretLineRect(client))
+    }
+
+    // MARK: - 語音輸入
+
+    /// 右 Option 單擊：沒在聽就開始（打一半的字先上屏，講的接在後面）；在聽就結束
+    private func toggleVoice(_ client: IMKTextInput) {
+        let voice = VoiceInput.shared
+        if voice.isListening {
+            voice.stop()  // 等辨識器送回定案結果，由 onFinal 上屏
+            return
+        }
+        if let engine { flushBeforePassthrough(engine, client: client) }
+        showVoice("", client: client)
+        voice.start(
+            onPartial: { [weak self] text in self?.showVoice(text, client: client) },
+            onFinal: { [weak self] text in self?.endVoice(text, client: client) }
+        )
+    }
+
+    /// 辨識中：以組字區顯示 🎤＋目前聽到的字
+    private func showVoice(_ text: String, client: IMKTextInput) {
+        let shown = "🎤" + text
+        client.setMarkedText(
+            NSAttributedString(string: shown, attributes: [.underlineStyle: NSUnderlineStyle.single.rawValue]),
+            selectionRange: NSRange(location: shown.utf16.count, length: 0),
+            replacementRange: kNoRange
+        )
+    }
+
+    private func endVoice(_ text: String, client: IMKTextInput) {
+        if text.isEmpty {
+            client.setMarkedText("", selectionRange: NSRange(location: 0, length: 0), replacementRange: kNoRange)
+        } else {
+            client.insertText(text, replacementRange: kNoRange)
+        }
     }
 
     private func caretLineRect(_ client: IMKTextInput) -> NSRect {
