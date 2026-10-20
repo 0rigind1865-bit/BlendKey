@@ -29,6 +29,9 @@ class BlendKeyInputController: IMKInputController {
     private var engine: InputEngine?
     /// 上次問 AI 的組字內容：同樣內容不重問（被過濾掉時也不會一直重試）
     private static var lastCompletionRequest: String?
+    /// AI 補句至少要看到幾個字（組字中＋游標前同一行）：字太少 AI 多半亂猜，跳出來只是干擾。
+    /// ponytail: 固定 6 字，嫌早或嫌晚再調、或改成偏好設定
+    private static let minimumCompletionContext = 6
     private let kNoRange = NSRange(location: NSNotFound, length: NSNotFound)
 
     override init!(server: IMKServer!, delegate: Any!, client: Any!) {
@@ -386,8 +389,13 @@ class BlendKeyInputController: IMKInputController {
             return
         }
         guard engine.aiCompletion == nil, text != Self.lastCompletionRequest else { return }
+        let before = textBeforeComposition(client)
+        guard (before + text).filter({ !$0.isWhitespace }).count >= Self.minimumCompletionContext else {
+            AICompletion.cancel()
+            return
+        }
         Self.lastCompletionRequest = text
-        AICompletion.request(text: text, before: textBeforeComposition(client)) { [weak self] completion in
+        AICompletion.request(text: text, before: before) { [weak self] completion in
             guard let self, let engine = self.engine, engine.completionContext == text else { return }
             engine.aiCompletion = completion
             self.syncUI(engine, client: client)
