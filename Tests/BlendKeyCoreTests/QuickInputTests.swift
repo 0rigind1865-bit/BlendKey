@@ -249,6 +249,12 @@ private func engineWithHabits() -> (InputEngine, UserPhraseStore) {
     #expect(!engine.applyCorrection("妳。好", to: "妳，好"))  // 標點不能改
 }
 
+@Test func AI校正的文法只允許同音字() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    type(engine, "su3<cl3")  // 你，好
+    #expect(engine.correctionGrammar == #"root ::= ("你" | "妳" | "擬") ("，") ("好")"#)
+}
+
 @Test func AI校正不碰夾英文的組字區() {
     let engine = InputEngine(lexicon: 測試詞庫)
     type(engine, "su3")

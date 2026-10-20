@@ -33,9 +33,24 @@ enum SmartInput {
 
     static var isRunning: Bool { process?.isRunning == true }
 
-    /// 偏好設定的開關：打勾才啟動、取消就關掉（每次按鍵都會呼叫，已啟動／已關閉時什麼都不做）
+    /// 沒打字多久就關掉伺服器、把約 4 GB 記憶體還給系統（使用者回報：開瀏覽器就卡）。
+    /// 一打字就重新啟動（要 10～30 秒載入，這段時間不會有補句與校正）。
+    /// ponytail: 固定 3 分鐘，嫌重開太常或太佔記憶體再調、或改成偏好設定
+    private static let idleTimeout: TimeInterval = 180
+    private static var idleStop: DispatchWorkItem?
+
+    /// 偏好設定的開關，每次按鍵也會呼叫（當作「正在打字」）：
+    /// 打勾就確保伺服器在跑並重設閒置計時，取消就關掉
     static func setEnabled(_ enabled: Bool) {
-        enabled ? start() : stop()
+        guard enabled else { return stop() }
+        start()
+        idleStop?.cancel()
+        let work = DispatchWorkItem {
+            Log.general.info("智慧輸入：閒置 \(Int(idleTimeout), privacy: .public) 秒，關閉模型伺服器")
+            stop()
+        }
+        idleStop = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + idleTimeout, execute: work)
     }
 
     private static func start() {
@@ -66,6 +81,8 @@ enum SmartInput {
     }
 
     static func stop() {
+        idleStop?.cancel()
+        idleStop = nil
         cancel(.completion)
         cancel(.correction)
         guard let running = process else { return }
@@ -94,22 +111,18 @@ enum SmartInput {
         }
     }
 
-    /// AI 校正：停手 0.6 秒後問。上文直接接在句子前面（另開「上文：」欄位實測反而改不到「打的自」），
-    /// 回來時上文被它改動就整句不採用（上文已送出，不能動）。同音保險在核心 applyCorrection。
-    static func correct(text: String, before: String, completion: @escaping (String) -> Void) {
+    /// AI 校正：停手 0.6 秒後問。上文放在「正確：」後面當已知開頭，模型只寫組字區那段，
+    /// 而且用文法限制每一格只能選同音字（實驗 H：看得到錯字句＋只能選同音，修 5、改壞 0）。
+    /// 核心 applyCorrection 再做一次同音保險。
+    static func correct(text: String, before: String, grammar: String, completion: @escaping (String) -> Void) {
         schedule(.correction, after: 0.6, body: [
-            "prompt": fewShot + "錯字：\(before)\(text)\n正確：",
-            "n_predict": (before.count + text.count) * 2 + 8,
-            "stop": ["\n"],
+            "prompt": fewShot + "錯字：\(before)\(text)\n正確：\(before)",
+            "n_predict": text.count * 3 + 4,
+            "grammar": grammar,
         ]) { content in
             // ponytail: 除錯期間把內容記到系統紀錄（只在本機），確定穩定後改回 .private
             Log.general.info("AI 校正：送「\(text, privacy: .public)」→ 回「\(content, privacy: .public)」")
-            guard content.hasPrefix(before) else {
-                Log.general.info("AI 校正：上文被改動，不採用")
-                return
-            }
-            completion(String(content.dropFirst(before.count))
-                .filter { !$0.isWhitespace && !"，。！？、：；「」".contains($0) })
+            completion(content)
         }
     }
 

@@ -418,7 +418,8 @@ class BlendKeyInputController: IMKInputController {
 
     /// AI 校正：組字區變了就（停手後）問一次；回來時組字區還是同一句才套用（只採用同音的改動）
     private func requestCorrectionIfNeeded(_ engine: InputEngine, client: IMKTextInput) {
-        guard Self.smartInputOn(.smartCorrection), let target = engine.correctionTarget else {
+        guard Self.smartInputOn(.smartCorrection), let target = engine.correctionTarget,
+              let grammar = engine.correctionGrammar else {
             SmartInput.cancel(.correction)
             Self.lastCorrectionRequest = nil
             return
@@ -431,7 +432,7 @@ class BlendKeyInputController: IMKInputController {
             return
         }
         Self.lastCorrectionRequest = target.text
-        SmartInput.correct(text: target.text, before: before) { [weak self] corrected in
+        SmartInput.correct(text: target.text, before: before, grammar: grammar) { [weak self] corrected in
             guard let self, let engine = self.engine else { return }
             guard engine.applyCorrection(corrected, to: target.text) else {
                 Log.general.info("AI 校正：沒有改動（沒錯字、不同音或組字區已變）")

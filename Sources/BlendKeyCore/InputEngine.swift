@@ -748,6 +748,24 @@ public final class InputEngine {
         return (texts.joined(), elements.map(\.readingValue))
     }
 
+    /// AI 校正的文法限制（llama.cpp GBNF）：每一格只能是原字或同讀音的常用字（前 12 個），
+    /// 標點等直出的字只能原樣。模型根本寫不出不同音的字，就不會白問一次（實驗 H：修 5、改壞 0）。
+    public var correctionGrammar: String? {
+        guard let target = correctionTarget else { return nil }
+        func quoted(_ text: String) -> String {
+            "\"" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
+        }
+        let slots = zip(target.text, target.readings).map { char, reading -> String in
+            var choices = [String(char)]
+            for unigram in reading.map({ lexicon.unigrams($0) }) ?? [] where unigram.value.count == 1 {
+                guard choices.count < 13 else { break }
+                if !choices.contains(unigram.value) { choices.append(unigram.value) }
+            }
+            return "(" + choices.map(quoted).joined(separator: " | ") + ")"
+        }
+        return "root ::= " + slots.joined(separator: " ")
+    }
+
     /// 套用 AI 校正：組字區還是同一句、字數一樣才套用；只採用「同音」的改動（保險），
     /// 改到的詞以 pin 固定（跟使用者自己選字一樣，按 ↓ 還能改回來，但不記入選字學習）。
     /// - Returns: 有沒有真的改到字
