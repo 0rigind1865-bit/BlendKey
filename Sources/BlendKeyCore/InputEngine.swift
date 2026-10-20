@@ -66,9 +66,12 @@ public final class InputEngine {
     private var walked: [DecodedSegment] = []
 
     private struct Sheet {
+        /// 選字改詞（pin）、插入符號、或把某個數字元素換成另一種寫法
+        enum Kind: Equatable { case words, symbols, number(index: Int) }
         var all: [DecodedSegment]
         var anchor: Int
         var highlighted: Int
+        var kind = Kind.words
     }
     private var sheet: Sheet?
     /// 已由長按轉成直出的鍵：吞掉它後續的自動重複
@@ -136,7 +139,7 @@ public final class InputEngine {
         decoder = SentenceDecoder(lexicon: lexicon)
     }
 
-    public var isIdle: Bool { elements.isEmpty && composer.isEmpty }
+    public var isIdle: Bool { elements.isEmpty && composer.isEmpty && sheet == nil }  // 空組字區的符號表也算忙
 
     /// 插入位置記號：組字中的游標不在句尾時顯示，讓使用者看得見會插在哪兩個字中間。
     /// macOS 不保證 app 會在組字文字裡畫游標，所以自己畫一個（純顯示，不會被送出）。
@@ -564,6 +567,7 @@ public final class InputEngine {
             }
             cancelNumericRun()
             if !composer.isEmpty { return .consumed }  // 打錯鍵不打斷組字
+            if ch == "`" { openSymbolSheet(); return .consumed }
             if fullWidthPunctuation, let punct = Punctuation.fullWidth(ch) {
                 if elements.isEmpty { return Output(handled: true, commitText: punct) }
                 insertLiteral(punct)
@@ -583,8 +587,11 @@ public final class InputEngine {
                 let page = current.highlighted / pageSize
                 let index = page * pageSize + digit - 1
                 // 只選本頁（每頁 7 字時，8、9 不該跳去選下一頁的字）
-                if digit <= pageSize, index < current.all.count { select(current.all[index]) }
+                if digit <= pageSize, index < current.all.count { return choose(current.all[index], kind: current.kind) }
                 return .consumed
+            }
+            if ch == "`", current.kind == .symbols {
+                return choose(DecodedSegment(start: cursor, length: 0, value: "`", reading: nil), kind: .symbols)  // 連按兩下＝要 ` 本身
             }
             // 繼續打字：關窗、照常組字
             sheet = nil
@@ -611,14 +618,13 @@ public final class InputEngine {
             sheet = current
             return .consumed
         case .enter:
-            select(current.all[current.highlighted])
-            return .consumed
+            return choose(current.all[current.highlighted], kind: current.kind)
         case .escape:
             sheet = nil
             return .consumed
         case .backspace:
             sheet = nil
-            return nil
+            return current.kind == .symbols ? .consumed : nil  // 符號表退格只收窗
         case .englishLiteral:
             sheet = nil
             return nil
@@ -706,16 +712,57 @@ public final class InputEngine {
 
     private func openSheet() {
         guard let anchor = anchorSegment() else { return }
-        let all = decoder.candidateSegments(elements, start: anchor.start)
+        // 數字（Tab 確認過的 1234）：列出千分位、大寫、國字等寫法
+        if anchor.reading == nil {
+            let forms = NumberForms.forms(of: anchor.value)
+            guard !forms.isEmpty else { return }
+            sheet = Sheet(
+                all: forms.map { DecodedSegment(start: anchor.start, length: 1, value: $0, reading: nil) },
+                anchor: anchor.start, highlighted: 0, kind: .number(index: anchor.start)
+            )
+            return
+        }
+        var all = decoder.candidateSegments(elements, start: anchor.start)
         guard !all.isEmpty else { return }
         let highlighted = all.firstIndex { $0.value == anchor.value && $0.length == anchor.length } ?? 0
+        // 今天、現在…：日期時間寫法緊接在目前的詞後面，第一頁就看得到
+        // ponytail: 只認整個詞剛好是「今天」的段；被併進長詞（今天晚上）時不出現
+        if let reading = anchor.reading {
+            let dates = DateMacro.forms(for: reading).map {
+                DecodedSegment(start: anchor.start, length: anchor.length, value: $0, reading: reading)
+            }
+            all.insert(contentsOf: dates, at: highlighted + 1)
+        }
         sheet = Sheet(all: all, anchor: anchor.start, highlighted: highlighted)
+    }
+
+    private func openSymbolSheet() {
+        sheet = Sheet(
+            all: SymbolTable.symbols.map { DecodedSegment(start: cursor, length: 0, value: $0, reading: nil) },
+            anchor: cursor, highlighted: 0, kind: .symbols
+        )
+    }
+
+    private func choose(_ segment: DecodedSegment, kind: Sheet.Kind) -> Output {
+        switch kind {
+        case .words:
+            select(segment)
+        case .symbols:
+            sheet = nil
+            if elements.isEmpty { return Output(handled: true, commitText: segment.value) }
+            insertLiteral(segment.value)
+        case .number(let index):
+            sheet = nil
+            elements[index] = .literal(segment.value)
+            rewalk()
+        }
+        return .consumed
     }
 
     private func select(_ segment: DecodedSegment) {
         pins.removeAll { $0.start < segment.end && segment.start < $0.end }
         pins.append(segment)
-        if let reading = segment.reading {
+        if let reading = segment.reading, !DateMacro.forms(for: reading).contains(segment.value) {
             userPhrases?.bump(reading: reading, value: segment.value)
         }
         rewalk()

@@ -20,6 +20,12 @@ private struct GuideView: View {
         Shortcut(keys: "Esc", detail: "清掉組字中的內容／關閉候選字窗"),
     ]
 
+    private let quick = [
+        Shortcut(keys: "`（數字 1 左邊）", detail: "打開符號表：…、——、《》、→、℃、①、NT$ 等，←→ 翻頁換類別；連按兩下輸出 ` 本身"),
+        Shortcut(keys: "今天＋空白", detail: "候選窗多出 2026-10-20、民國年、星期等寫法；明天、昨天、後天、前天也可以，打「現在」出時間"),
+        Shortcut(keys: "數字＋Tab＋空白", detail: "打 1234 按 Tab，再按空白：可換成 1,234、壹仟貳佰參拾肆、新臺幣…元整、一千二百三十四"),
+    ]
+
     private let mixed = [
         Shortcut(keys: "直接打英文", detail: "打 google 後按空白，候選窗同時列出 google／Google／GOOGLE 與中文字，數字直選；按 Enter 直接送出英文"),
         Shortcut(keys: "Shift＋字母", detail: "開始英文段（首字大寫），之後小寫字母原樣接續；再按一下 Shift 回中文，或直接打注音也會自動回中文"),
@@ -46,6 +52,7 @@ private struct GuideView: View {
                 }
 
                 section("中文輸入", chinese)
+                section("快打", quick)
                 section("中英混輸", mixed)
                 section("自動處理", smart)
 
