@@ -99,6 +99,14 @@ public final class InputEngine {
     }
     private var bilingual: BilingualSheet?
 
+    /// 聯想詞：Enter 上屏後，依「你打過的詞語接續」提示下一個詞，Shift+數字選、可連續接龍。
+    /// 任何其他鍵都會收起提示並照常處理，所以不擋打字。
+    public var associationsEnabled = true
+    private var associations: [String] = []
+    private var associationPrevious: String?
+    /// Shift+1〜9 在美式鍵盤打出的字元
+    private static let associationKeys: [Character] = ["!", "@", "#", "$", "%", "^", "&", "*", "("]
+
     /// 全形標點開關（偏好設定）
     public var fullWidthPunctuation = true
     /// 中英之間自動加空白開關（偏好設定）：我愛mac → 我愛 mac
@@ -141,7 +149,8 @@ public final class InputEngine {
         decoder = SentenceDecoder(lexicon: lexicon)
     }
 
-    public var isIdle: Bool { elements.isEmpty && composer.isEmpty && sheet == nil }  // 空組字區的符號表也算忙
+    /// 空組字區的符號表、聯想詞提示也算忙（Cmd 快捷鍵才會先收起）
+    public var isIdle: Bool { elements.isEmpty && composer.isEmpty && sheet == nil && associations.isEmpty }
 
     /// 插入位置記號：組字中的游標不在句尾時顯示，讓使用者看得見會插在哪兩個字中間。
     /// macOS 不保證 app 會在組字文字裡畫游標，所以自己畫一個（純顯示，不會被送出）。
@@ -210,6 +219,9 @@ public final class InputEngine {
         switch key {
         case .character, .space, .tab, .enter: break  // 這些要用到數字追蹤；character/space 自行管理
         default: cancelNumericRun()
+        }
+        if !associations.isEmpty, let output = handleInAssociations(key) {
+            return output
         }
         if bilingual != nil, let output = handleInBilingual(key) {
             return output
@@ -405,6 +417,12 @@ public final class InputEngine {
     }
 
     public func sheetView() -> SheetView? {
+        if !associations.isEmpty {
+            return SheetView(
+                items: associations.enumerated().map { SheetView.Item(label: "⇧\($0.offset + 1)", value: $0.element) },
+                highlightedInPage: -1, pageIndex: 0, pageCount: 1, anchorUTF16: 0
+            )
+        }
         if let bilingual {
             let items = bilingual.choices.enumerated().map { offset, choice in
                 let value: String
@@ -672,6 +690,32 @@ public final class InputEngine {
         }
     }
 
+    // MARK: - 聯想詞
+
+    private func showAssociations(after word: String?) {
+        associationPrevious = word
+        guard associationsEnabled, let word, let store = userPhrases else {
+            associations = []
+            return
+        }
+        associations = store.nextWords(after: word, limit: 5)
+    }
+
+    private func handleInAssociations(_ key: KeyInput) -> Output? {
+        if case .character(let ch) = key,
+           let index = Self.associationKeys.firstIndex(of: ch), index < associations.count {
+            let word = associations[index]
+            if let previous = associationPrevious {
+                userPhrases?.noteCommit([previous, word])  // 選了＝真的這樣打，接續次數照記
+            }
+            showAssociations(after: word)  // 接龍：再提示這個詞後面常接的
+            return Output(handled: true, commitText: word)
+        }
+        associations = []
+        if case .escape = key { return .consumed }
+        return nil  // 其他鍵：收起提示，照常處理
+    }
+
     // MARK: - 中英並列選字
 
     private func openBilingualSheet() {
@@ -868,6 +912,7 @@ public final class InputEngine {
         composer.clear()
         sheet = nil
         bilingual = nil
+        associations = []
         isInLiteralRun = false
         cancelNumericRun()
     }
@@ -875,7 +920,10 @@ public final class InputEngine {
     private func flushOutput() -> Output {
         // 這裡刻意不碰數字提示：「打」＝2ㄉ8ㄚ3ˇ 整串都是數字鍵，
         // Enter 若自動選數字就會把打好的中文換成 283。要數字請按 Tab。
+        // 組字中還有沒打完的注音／英文時，最後一個詞不是真的詞，不聯想
+        let lastWord = composer.isEmpty ? walked.last?.value : nil
         guard let text = flush() else { return .ignored }
+        showAssociations(after: lastWord)
         return Output(handled: true, commitText: text)
     }
 

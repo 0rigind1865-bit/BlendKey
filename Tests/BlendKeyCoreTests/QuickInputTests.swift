@@ -92,3 +92,49 @@ private func type(_ engine: InputEngine, _ keys: String) {
     #expect(engine.handle(.enter).commitText == today[0])
     #expect(store.entries(.selection).isEmpty)
 }
+
+// MARK: - 聯想詞
+
+@Test func Enter上屏後提示常接的詞_Shift數字選並接龍() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    let store = UserPhraseStore(fileURL: nil)
+    store.noteCommit(["你好", "世界"])
+    store.noteCommit(["你好", "世界"])
+    store.noteCommit(["世界", "是"])
+    store.noteCommit(["世界", "是"])
+    store.noteCommit(["你好", "高"])  // 只出現一次：雜訊，不提示
+    engine.userPhrases = store
+
+    type(engine, "su3cl3")
+    #expect(engine.handle(.enter).commitText == "你好")
+    #expect(engine.sheetView()?.items.map(\.value) == ["世界"])
+    #expect(engine.sheetView()?.items.first?.label == "⇧1")
+    #expect(!engine.isIdle)
+
+    #expect(engine.handle(.character("!")).commitText == "世界")  // Shift+1
+    #expect(engine.sheetView()?.items.map(\.value) == ["是"])     // 接龍
+    #expect(store.nextWords(after: "你好", limit: 5) == ["世界"])
+}
+
+@Test func 聯想詞提示中照常打字不受影響() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    let store = UserPhraseStore(fileURL: nil)
+    store.noteCommit(["你好", "世界"])
+    store.noteCommit(["你好", "世界"])
+    engine.userPhrases = store
+
+    type(engine, "su3cl3")
+    _ = engine.handle(.enter)
+    type(engine, "su3")  // 直接打下一個字：提示收起、照常組字
+    #expect(engine.sheetView() == nil)
+    #expect(engine.preedit().text == "你")
+
+    _ = engine.handle(.enter)
+    #expect(engine.handle(.enter).handled == false)  // 提示中再按 Enter：收起並放行換行
+    #expect(engine.isIdle)
+
+    engine.associationsEnabled = false
+    type(engine, "su3cl3")
+    _ = engine.handle(.enter)
+    #expect(engine.sheetView() == nil)
+}

@@ -337,6 +337,7 @@ class BlendKeyInputController: IMKInputController {
             engine.fullWidthPunctuation = defaults.bool(forKey: SettingKey.fullWidthPunctuation)
             engine.autoSpacing = defaults.bool(forKey: SettingKey.autoSpacing)
             engine.pageSize = defaults.integer(forKey: SettingKey.pageSize)
+            engine.associationsEnabled = defaults.bool(forKey: SettingKey.associations)
             let fuzzy = defaults.bool(forKey: SettingKey.fuzzyReading)
             if engine.fuzzyReadingEnabled != fuzzy { engine.fuzzyReadingEnabled = fuzzy }
         }

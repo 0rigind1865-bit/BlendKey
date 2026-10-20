@@ -15,7 +15,8 @@ private struct CandidateView: View {
                     Text(item.label)
                         .font(.system(size: 11).monospacedDigit())
                         .foregroundStyle(highlighted ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
-                        .frame(width: 14, alignment: .trailing)
+                        .fixedSize()
+                        .frame(minWidth: 14, alignment: .trailing)  // 聯想詞標籤「⇧1」較寬
                     Text(item.value)
                         .font(.system(size: 17))
                         .foregroundStyle(highlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))

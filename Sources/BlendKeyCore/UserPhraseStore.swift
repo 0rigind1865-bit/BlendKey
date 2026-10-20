@@ -90,6 +90,16 @@ public final class UserPhraseStore {
         return Foundation.log(1.0 + Double(count))
     }
 
+    /// 聯想詞：這個詞後面最常接的詞（次數多的在前）。
+    /// ponytail: 只收出現 2 次以上的，一次性的組合多半是雜訊；嫌少再放寬
+    public func nextWords(after previous: String, limit: Int) -> [String] {
+        (data.transitions[previous] ?? [:])
+            .filter { $0.value >= 2 }
+            .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+            .prefix(limit)
+            .map(\.key)
+    }
+
     public var transitionCount: Int {
         data.transitions.values.reduce(0) { $0 + $1.count }
     }

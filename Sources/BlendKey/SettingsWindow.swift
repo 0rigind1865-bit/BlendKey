@@ -9,6 +9,7 @@ enum SettingKey {
     static let autoSpacing = "autoSpacing"
     static let pageSize = "pageSize"
     static let fuzzyReading = "fuzzyReading"
+    static let associations = "associations"
 
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [
@@ -18,6 +19,7 @@ enum SettingKey {
             autoSpacing: true,
             pageSize: 9,
             fuzzyReading: false,
+            associations: true,
         ])
     }
 }
@@ -29,6 +31,7 @@ private struct SettingsView: View {
     @AppStorage(SettingKey.autoSpacing) private var autoSpacing = true
     @AppStorage(SettingKey.pageSize) private var pageSize = 9
     @AppStorage(SettingKey.fuzzyReading) private var fuzzyReading = false
+    @AppStorage(SettingKey.associations) private var associations = true
     @State private var showingResetAlert = false
     @State private var didReset = false
 
@@ -52,6 +55,7 @@ private struct SettingsView: View {
                 Text("開啟後正確讀音仍排最前面，相似音只在後面遞補。")
                     .font(.callout)
                     .foregroundStyle(.secondary)
+                Toggle("聯想詞（Enter 送出後提示你常接的下一個詞，Shift＋數字選）", isOn: $associations)
                 Picker("候選字窗每頁字數", selection: $pageSize) {
                     Text("7").tag(7)
                     Text("9").tag(9)
