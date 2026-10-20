@@ -354,7 +354,7 @@ class BlendKeyInputController: IMKInputController {
 
     private func syncUI(_ engine: InputEngine, client: IMKTextInput) {
         setMarked(engine.preedit(), client: client)
-        if let sheet = engine.sheetView() ?? engine.englishHintView() {
+        if let sheet = engine.sheetView() ?? engine.englishHintView() ?? engine.associationView() {
             var lineRect = NSRect.zero
             client.attributes(forCharacterIndex: sheet.anchorUTF16, lineHeightRectangle: &lineRect)
             CandidatePanel.shared.present(

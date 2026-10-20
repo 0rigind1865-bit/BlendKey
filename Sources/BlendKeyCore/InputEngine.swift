@@ -99,11 +99,15 @@ public final class InputEngine {
     }
     private var bilingual: BilingualSheet?
 
-    /// 聯想詞：Enter 上屏後，依「你打過的詞語接續」提示下一個詞，Shift+數字選、可連續接龍。
-    /// 任何其他鍵都會收起提示並照常處理，所以不擋打字。
+    /// 聯想詞（像手機鍵盤）：打字過程中依「你打過的詞語接續」提示下一個詞，
+    /// Shift+數字直接放進組字區；Enter 上屏後也接著提示、選了直接上屏可接龍。
+    /// 只攔 Shift+數字，其他鍵照常處理，所以不擋打字。
     public var associationsEnabled = true
-    private var associations: [String] = []
-    private var associationPrevious: String?
+    /// 上屏後（組字區已清空）的提示與它的前詞
+    private var committedAssociations: [String] = []
+    private var committedPrevious: String?
+    /// 組字中按 Esc 先收起提示；組字區一有變動就恢復
+    private var associationsHidden = false
     /// Shift+1〜9 在美式鍵盤打出的字元
     private static let associationKeys: [Character] = ["!", "@", "#", "$", "%", "^", "&", "*", "("]
 
@@ -150,7 +154,7 @@ public final class InputEngine {
     }
 
     /// 空組字區的符號表、聯想詞提示也算忙（Cmd 快捷鍵才會先收起）
-    public var isIdle: Bool { elements.isEmpty && composer.isEmpty && sheet == nil && associations.isEmpty }
+    public var isIdle: Bool { elements.isEmpty && composer.isEmpty && sheet == nil && committedAssociations.isEmpty }
 
     /// 插入位置記號：組字中的游標不在句尾時顯示，讓使用者看得見會插在哪兩個字中間。
     /// macOS 不保證 app 會在組字文字裡畫游標，所以自己畫一個（純顯示，不會被送出）。
@@ -220,7 +224,7 @@ public final class InputEngine {
         case .character, .space, .tab, .enter: break  // 這些要用到數字追蹤；character/space 自行管理
         default: cancelNumericRun()
         }
-        if !associations.isEmpty, let output = handleInAssociations(key) {
+        if let output = handleInAssociations(key) {
             return output
         }
         if bilingual != nil, let output = handleInBilingual(key) {
@@ -417,12 +421,6 @@ public final class InputEngine {
     }
 
     public func sheetView() -> SheetView? {
-        if !associations.isEmpty {
-            return SheetView(
-                items: associations.enumerated().map { SheetView.Item(label: "⇧\($0.offset + 1)", value: $0.element) },
-                highlightedInPage: -1, pageIndex: 0, pageCount: 1, anchorUTF16: 0
-            )
-        }
         if let bilingual {
             let items = bilingual.choices.enumerated().map { offset, choice in
                 let value: String
@@ -456,6 +454,17 @@ public final class InputEngine {
             pageIndex: page,
             pageCount: pageCount,
             anchorUTF16: anchorUTF16
+        )
+    }
+
+    /// 聯想詞提示的呈現（⇧1〜⇧5 標籤、不反白），對齊游標
+    public func associationView() -> SheetView? {
+        let shown = visibleAssociations
+        guard !shown.isEmpty else { return nil }
+        return SheetView(
+            items: shown.enumerated().map { SheetView.Item(label: "⇧\($0.offset + 1)", value: $0.element) },
+            highlightedInPage: -1, pageIndex: 0, pageCount: 1,
+            anchorUTF16: preedit().caretUTF16
         )
     }
 
@@ -692,28 +701,47 @@ public final class InputEngine {
 
     // MARK: - 聯想詞
 
-    private func showAssociations(after word: String?) {
-        associationPrevious = word
-        guard associationsEnabled, let word, let store = userPhrases else {
-            associations = []
-            return
-        }
-        associations = store.nextWords(after: word, limit: 5)
+/// 目前該顯示的聯想詞（空＝不顯示）。其他視窗或提示開著時讓路。
+    /// 組字中跟著最後一個詞即時更新；打注音打到一半也維持顯示，不會每個音節閃一下。
+    private var visibleAssociations: [String] {
+        guard associationsEnabled, !associationsHidden, sheet == nil, bilingual == nil,
+              !isInLiteralRun, englishHint == nil, numberHint == nil, let store = userPhrases
+        else { return [] }
+        if elements.isEmpty { return composer.isEmpty ? committedAssociations : [] }
+        guard cursor == elements.count, let last = walked.last else { return [] }  // 游標回頭改字時不提示
+        return store.nextWords(after: last.value, limit: 5)
+    }
+
+    private func showCommittedAssociations(after word: String?) {
+        committedPrevious = word
+        committedAssociations = word.flatMap { userPhrases?.nextWords(after: $0, limit: 5) } ?? []
     }
 
     private func handleInAssociations(_ key: KeyInput) -> Output? {
+        let shown = visibleAssociations
+        guard !shown.isEmpty else { return nil }
         if case .character(let ch) = key,
-           let index = Self.associationKeys.firstIndex(of: ch), index < associations.count {
-            let word = associations[index]
-            if let previous = associationPrevious {
-                userPhrases?.noteCommit([previous, word])  // 選了＝真的這樣打，接續次數照記
+           let index = Self.associationKeys.firstIndex(of: ch), index < shown.count {
+            let word = shown[index]
+            if elements.isEmpty {
+                // 上屏後：直接上屏，記入接續次數，再提示這個詞後面常接的（接龍）
+                if let previous = committedPrevious { userPhrases?.noteCommit([previous, word]) }
+                showCommittedAssociations(after: word)
+                return Output(handled: true, commitText: word)
             }
-            showAssociations(after: word)  // 接龍：再提示這個詞後面常接的
-            return Output(handled: true, commitText: word)
+            // 組字中：打到一半的注音當作就是要打這個詞，換成它
+            // ponytail: 以直出片段插入（接續表只存詞、不存讀音），插入後不能再用 ↓ 改字；要能改得在接續表存讀音
+            composer.clear()
+            cancelNumericRun()
+            insertLiteral(word)
+            return .consumed
         }
-        associations = []
-        if case .escape = key { return .consumed }
-        return nil  // 其他鍵：收起提示，照常處理
+        committedAssociations = []
+        if case .escape = key {
+            associationsHidden = true  // 先收提示；組字中再按一次 Esc 才清組字區
+            return .consumed
+        }
+        return nil  // 其他鍵：照常處理
     }
 
     // MARK: - 中英並列選字
@@ -873,6 +901,7 @@ public final class InputEngine {
         }
         elements.insert(element, at: cursor)
         cursor += 1
+        associationsHidden = false
         rewalk()
     }
 
@@ -886,6 +915,7 @@ public final class InputEngine {
         }
         elements.remove(at: index)
         cursor -= 1
+        associationsHidden = false
         rewalk()
     }
 
@@ -912,7 +942,8 @@ public final class InputEngine {
         composer.clear()
         sheet = nil
         bilingual = nil
-        associations = []
+        committedAssociations = []
+        associationsHidden = false
         isInLiteralRun = false
         cancelNumericRun()
     }
@@ -923,7 +954,7 @@ public final class InputEngine {
         // 組字中還有沒打完的注音／英文時，最後一個詞不是真的詞，不聯想
         let lastWord = composer.isEmpty ? walked.last?.value : nil
         guard let text = flush() else { return .ignored }
-        showAssociations(after: lastWord)
+        showCommittedAssociations(after: lastWord)
         return Output(handled: true, commitText: text)
     }
 

@@ -55,7 +55,7 @@ private struct SettingsView: View {
                 Text("開啟後正確讀音仍排最前面，相似音只在後面遞補。")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                Toggle("聯想詞（Enter 送出後提示你常接的下一個詞，Shift＋數字選）", isOn: $associations)
+                Toggle("聯想詞（打字時提示你常接的下一個詞，Shift＋數字選）", isOn: $associations)
                 Picker("候選字窗每頁字數", selection: $pageSize) {
                     Text("7").tag(7)
                     Text("9").tag(9)

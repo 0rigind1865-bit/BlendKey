@@ -95,46 +95,59 @@ private func type(_ engine: InputEngine, _ keys: String) {
 
 // MARK: - 聯想詞
 
-@Test func Enter上屏後提示常接的詞_Shift數字選並接龍() {
+private func engineWithHabits() -> (InputEngine, UserPhraseStore) {
     let engine = InputEngine(lexicon: 測試詞庫)
     let store = UserPhraseStore(fileURL: nil)
-    store.noteCommit(["你好", "世界"])
-    store.noteCommit(["你好", "世界"])
-    store.noteCommit(["世界", "是"])
-    store.noteCommit(["世界", "是"])
+    for _ in 0..<2 {
+        store.noteCommit(["你好", "世界"])
+        store.noteCommit(["世界", "是"])
+    }
     store.noteCommit(["你好", "高"])  // 只出現一次：雜訊，不提示
     engine.userPhrases = store
+    return (engine, store)
+}
 
+@Test func 打字中即時提示下一個詞_Shift數字放進組字區() {
+    let (engine, _) = engineWithHabits()
+    type(engine, "su3cl3")  // 你好
+    #expect(engine.associationView()?.items.map(\.value) == ["世界"])
+    #expect(engine.associationView()?.items.first?.label == "⇧1")
+    type(engine, "g")  // 打注音打到一半：提示維持，不閃
+    #expect(engine.associationView()?.items.map(\.value) == ["世界"])
+
+    _ = engine.handle(.character("!"))  // Shift+1：換掉打到一半的注音
+    #expect(engine.preedit().text == "你好世界")
+    #expect(engine.associationView()?.items.map(\.value) == ["是"])  // 接龍
+    #expect(engine.handle(.enter).commitText == "你好世界")
+}
+
+@Test func Enter上屏後也提示_選了直接上屏() {
+    let (engine, store) = engineWithHabits()
     type(engine, "su3cl3")
     #expect(engine.handle(.enter).commitText == "你好")
-    #expect(engine.sheetView()?.items.map(\.value) == ["世界"])
-    #expect(engine.sheetView()?.items.first?.label == "⇧1")
     #expect(!engine.isIdle)
-
-    #expect(engine.handle(.character("!")).commitText == "世界")  // Shift+1
-    #expect(engine.sheetView()?.items.map(\.value) == ["是"])     // 接龍
+    #expect(engine.handle(.character("!")).commitText == "世界")
+    #expect(engine.associationView()?.items.map(\.value) == ["是"])
     #expect(store.nextWords(after: "你好", limit: 5) == ["世界"])
 }
 
-@Test func 聯想詞提示中照常打字不受影響() {
-    let engine = InputEngine(lexicon: 測試詞庫)
-    let store = UserPhraseStore(fileURL: nil)
-    store.noteCommit(["你好", "世界"])
-    store.noteCommit(["你好", "世界"])
-    engine.userPhrases = store
-
+@Test func 聯想詞不擋打字_Esc先收提示() {
+    let (engine, _) = engineWithHabits()
     type(engine, "su3cl3")
-    _ = engine.handle(.enter)
-    type(engine, "su3")  // 直接打下一個字：提示收起、照常組字
-    #expect(engine.sheetView() == nil)
-    #expect(engine.preedit().text == "你")
+    _ = engine.handle(.escape)  // 第一次 Esc：只收提示
+    #expect(engine.associationView() == nil)
+    #expect(engine.preedit().text == "你好")
+    _ = engine.handle(.character("!"))  // 收起後 Shift+1 照常是全形驚嘆號
+    #expect(engine.preedit().text == "你好！")
 
     _ = engine.handle(.enter)
-    #expect(engine.handle(.enter).handled == false)  // 提示中再按 Enter：收起並放行換行
+    type(engine, "su3")  // 上屏後直接打字：提示收起、照常組字
+    #expect(engine.preedit().text == "你")
+    _ = engine.handle(.escape)
+    _ = engine.handle(.escape)
     #expect(engine.isIdle)
 
     engine.associationsEnabled = false
     type(engine, "su3cl3")
-    _ = engine.handle(.enter)
-    #expect(engine.sheetView() == nil)
+    #expect(engine.associationView() == nil)
 }
