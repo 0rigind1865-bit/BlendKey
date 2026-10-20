@@ -1,15 +1,20 @@
 import Foundation
+import BlendKeyCore
 
-/// AI 校正（智慧輸入）：在本機跑開源續寫型模型 Breeze-7B-Base（llama.cpp 的 llama-server，不連網），
-/// 把組字區的同音錯字改掉。偏好設定打勾才啟動伺服器（約吃 4 GB 記憶體），取消就關掉。
+/// 智慧輸入：在本機跑開源續寫型模型 Breeze-7B-Base（llama.cpp 的 llama-server，不連網），
+/// 負責 AI 補句（把句子接下去）與 AI 校正（改掉組字區的同音錯字）。
+/// 偏好設定打勾才啟動伺服器（約吃 4 GB 記憶體），取消就關掉。
 /// 模型不綁死：換一個 .gguf 檔（改 modelFileName）就能換更小的模型。
 /// 實驗紀錄見 experiments/ai-prediction/README.md（實驗 G）。
-enum SmartCorrection {
+enum SmartInput {
     private static let port = 39281
     private static let modelFileName = "Breeze-7B-Base-v1_0.Q3_K_M.gguf"
     private static var process: Process?
-    private static var pending: DispatchWorkItem?
-    private static var task: URLSessionDataTask?
+
+    /// 補句與校正各自一條請求線：新請求只取消同一種的舊請求
+    enum Kind { case completion, correction }
+    private static var pending: [Kind: DispatchWorkItem] = [:]
+    private static var tasks: [Kind: URLSessionDataTask] = [:]
 
     static var modelURL: URL? {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
@@ -54,69 +59,85 @@ enum SmartCorrection {
         do {
             try launched.run()
             process = launched
-            Log.general.info("AI 校正：啟動模型伺服器")
+            Log.general.info("智慧輸入：啟動模型伺服器")
         } catch {
-            Log.general.error("AI 校正：模型伺服器啟動失敗 \(String(describing: error), privacy: .public)")
+            Log.general.error("智慧輸入：模型伺服器啟動失敗 \(String(describing: error), privacy: .public)")
         }
     }
 
     static func stop() {
-        cancel()
+        cancel(.completion)
+        cancel(.correction)
         guard let running = process else { return }
         running.terminate()
         process = nil
-        Log.general.info("AI 校正：關閉模型伺服器")
+        Log.general.info("智慧輸入：關閉模型伺服器")
     }
 
-    static func cancel() {
-        pending?.cancel()
-        pending = nil
-        task?.cancel()
-        task = nil
+    static func cancel(_ kind: Kind) {
+        pending.removeValue(forKey: kind)?.cancel()
+        tasks.removeValue(forKey: kind)?.cancel()
     }
 
-    /// 停手 0.6 秒後問；新請求取消舊的。completion 在主執行緒回呼（失敗、逾時就不回呼）。
-    /// - Parameters:
-    ///   - text: 組字區的字
-    ///   - before: 游標前文件裡的文字（上文）
-    static func request(text: String, before: String, completion: @escaping (String) -> Void) {
-        cancel()
-        guard isRunning else { return }
-        let work = DispatchWorkItem { send(text: text, before: before, completion: completion) }
-        pending = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: work)
+    /// AI 補句：停手 0.25 秒後問，續寫型模型直接把「上文＋組字區」接下去。
+    /// completion 在主執行緒回呼（被過濾掉、失敗、逾時就不回呼）。
+    static func complete(text: String, before: String, completion: @escaping (String) -> Void) {
+        schedule(.completion, after: 0.25, body: [
+            "prompt": before + text,
+            "n_predict": 12,
+            "stop": ["\n", "。", "！", "？", "，"],
+        ]) { content in
+            CompletionFilter.clean(content, text: text, before: before).map(completion)
+        }
     }
 
-    private static func send(text: String, before: String, completion: @escaping (String) -> Void) {
-        let body: [String: Any] = [
-            // 上文直接接在句子前面（另開「上文：」欄位實測反而改不到「打的自」）
+    /// AI 校正：停手 0.6 秒後問。上文直接接在句子前面（另開「上文：」欄位實測反而改不到「打的自」），
+    /// 回來時上文被它改動就整句不採用（上文已送出，不能動）。同音保險在核心 applyCorrection。
+    static func correct(text: String, before: String, completion: @escaping (String) -> Void) {
+        schedule(.correction, after: 0.6, body: [
             "prompt": fewShot + "錯字：\(before)\(text)\n正確：",
             "n_predict": (before.count + text.count) * 2 + 8,
-            "temperature": 0,
             "stop": ["\n"],
-            "cache_prompt": true,  // 範例部分每次都一樣，伺服器會快取
-        ]
+        ]) { content in
+            guard content.hasPrefix(before) else { return }
+            completion(String(content.dropFirst(before.count))
+                .filter { !$0.isWhitespace && !"，。！？、：；「」".contains($0) })
+        }
+    }
+
+    private static func schedule(
+        _ kind: Kind, after delay: TimeInterval, body: [String: Any], handle: @escaping (String) -> Void
+    ) {
+        cancel(kind)
+        guard isRunning else { return }
+        let work = DispatchWorkItem { send(kind, body: body, handle: handle) }
+        pending[kind] = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private static func send(_ kind: Kind, body: [String: Any], handle: @escaping (String) -> Void) {
+        var body = body
+        body["temperature"] = 0
+        body["cache_prompt"] = true  // 校正的範例、補句的上文常重複，伺服器會快取
         var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/completion")!)
         request.httpMethod = "POST"
-        request.timeoutInterval = 8  // 記憶體吃緊時可能很慢：太慢就這次不改
+        request.timeoutInterval = 8  // 記憶體吃緊時可能很慢：太慢就這次不做
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         let started = Date()
-        task = URLSession.shared.dataTask(with: request) { data, _, error in
+        let task = URLSession.shared.dataTask(with: request) { data, _, error in
             guard error == nil, let data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let content = (json["content"] as? String)?.trimmingCharacters(in: .whitespaces),
-                  content.hasPrefix(before)  // 上文被它改動了：整句不採用（上文已送出，不能動）
+                  let content = (json["content"] as? String)?.trimmingCharacters(in: .whitespaces)
             else { return }
-            let cleaned = content.dropFirst(before.count)
-                .filter { !$0.isWhitespace && !"，。！？、：；「」".contains($0) }
             DispatchQueue.main.async {
                 let elapsed = Int(Date().timeIntervalSince(started) * 1000)
-                Log.general.info("AI 校正：\(elapsed, privacy: .public) ms")
-                completion(cleaned)
+                Log.general.info("智慧輸入（\(kind == .completion ? "補句" : "校正", privacy: .public)）：\(elapsed, privacy: .public) ms")
+                handle(content)
             }
         }
-        task?.resume()
+        tasks[kind] = task
+        task.resume()
     }
 
     /// 續寫型模型照範例格式改錯字（實驗 G：錯的 10 句修好 4 句、改壞 0 句）

@@ -212,7 +212,7 @@ private func engineWithHabits() -> (InputEngine, UserPhraseStore) {
 @Test func AI補句輸出過濾() {
     #expect(CompletionFilter.clean("已經到貨了。謝謝", text: "這批貨", before: "") == "已經到貨了")
     #expect(CompletionFilter.clean("這批貨已經到了", text: "這批貨", before: "") == "已經到了")  // 重打原文
-    #expect(CompletionFilter.clean("我會幫你打字", text: "你好", before: "") == nil)  // 像客服回話
+    #expect(CompletionFilter.clean("庫>都市醫武狂尊>第1", text: "我的書", before: "") == nil)  // 網頁殘渣
     #expect(CompletionFilter.clean("寫字寫字寫字寫字", text: "他", before: "") == nil)  // 鬼打牆
     #expect(CompletionFilter.clean("  ", text: "你好", before: "") == nil)
 }

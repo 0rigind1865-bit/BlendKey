@@ -10,6 +10,7 @@ enum SettingKey {
     static let pageSize = "pageSize"
     static let fuzzyReading = "fuzzyReading"
     static let associations = "associations"
+    static let smartInput = "smartInput"  // 智慧輸入總開關：打勾才啟動 Breeze
     static let aiCompletion = "aiCompletion"
     static let smartCorrection = "smartCorrection"
 
@@ -22,8 +23,9 @@ enum SettingKey {
             pageSize: 9,
             fuzzyReading: false,
             associations: true,
-            aiCompletion: false,
-            smartCorrection: false,
+            smartInput: false,
+            aiCompletion: true,
+            smartCorrection: true,
         ])
     }
 }
@@ -36,8 +38,9 @@ private struct SettingsView: View {
     @AppStorage(SettingKey.pageSize) private var pageSize = 9
     @AppStorage(SettingKey.fuzzyReading) private var fuzzyReading = false
     @AppStorage(SettingKey.associations) private var associations = true
-    @AppStorage(SettingKey.aiCompletion) private var aiCompletion = false
-    @AppStorage(SettingKey.smartCorrection) private var smartCorrection = false
+    @AppStorage(SettingKey.smartInput) private var smartInput = false
+    @AppStorage(SettingKey.aiCompletion) private var aiCompletion = true
+    @AppStorage(SettingKey.smartCorrection) private var smartCorrection = true
     @State private var showingResetAlert = false
     @State private var didReset = false
 
@@ -45,12 +48,19 @@ private struct SettingsView: View {
     var onReset: () -> Void = {}
     var onShowLearnedData: () -> Void = {}
 
-    private var smartCorrectionNote: String {
-        if SmartCorrection.serverPath == nil { return "需要 llama.cpp：在終端機執行 brew install llama.cpp" }
-        if !SmartCorrection.modelExists {
-            return "需要模型檔，放在：\(SmartCorrection.modelURL?.path ?? "")"
+    private var smartInputReady: Bool { SmartInput.serverPath != nil && SmartInput.modelExists }
+
+    private var smartInputNote: String {
+        if SmartInput.serverPath == nil { return "需要 llama.cpp：在終端機執行 brew install llama.cpp" }
+        if !SmartInput.modelExists {
+            return "需要模型檔，放在：\(SmartInput.modelURL?.path ?? "")"
         }
-        return "使用開源模型 Breeze（聯發科），在本機執行、不連網。開啟時約佔 4 GB 記憶體，關閉就釋放。只會換成同音字。"
+        return "使用開源模型 Breeze（聯發科），在本機執行、不連網。開啟時約佔 4 GB 記憶體，關閉就釋放。"
+    }
+
+    /// 開關一動就立刻啟動／關閉 Breeze（不用等下一次打字）
+    private func syncSmartInput() {
+        SmartInput.setEnabled(smartInput && (aiCompletion || smartCorrection))
     }
 
     var body: some View {
@@ -78,19 +88,20 @@ private struct SettingsView: View {
                 .pickerStyle(.segmented)
             }
             Section("智慧輸入（實驗）") {
-                Toggle("AI 補句（提示列最前面 ✨，按 → 接受）", isOn: $aiCompletion)
-                    .disabled(!AICompletion.isAvailable)
-                Text(AICompletion.isAvailable
-                     ? "使用 Mac 內建的 Apple Intelligence，完全在本機執行、不連網。"
-                     : "需要 macOS 26 以上，並在「系統設定 › Apple Intelligence 與 Siri」開啟。")
+                Toggle("啟用智慧輸入（Breeze）", isOn: $smartInput)
+                    .disabled(!smartInputReady)
+                    .onChange(of: smartInput) { _, _ in syncSmartInput() }
+                Text(smartInputNote)
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                Toggle("AI 校正（停手時自動改掉組字區的同音錯字）", isOn: $smartCorrection)
-                    .disabled(!SmartCorrection.modelExists || SmartCorrection.serverPath == nil)
-                    .onChange(of: smartCorrection) { _, enabled in SmartCorrection.setEnabled(enabled) }
-                Text(smartCorrectionNote)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                Group {
+                    Toggle("AI 補句（提示列最前面 ✨，按 → 接受）", isOn: $aiCompletion)
+                        .onChange(of: aiCompletion) { _, _ in syncSmartInput() }
+                    Toggle("AI 校正（停手時自動改掉組字區的同音錯字）", isOn: $smartCorrection)
+                        .onChange(of: smartCorrection) { _, _ in syncSmartInput() }
+                }
+                .padding(.leading, 16)
+                .disabled(!smartInput || !smartInputReady)
             }
             Section("學習資料") {
                 Text("融鍵會記住你選過的字、自動學成新詞，並記錄詞與詞的接續習慣，讓斷詞越用越準。資料只存在本機（Application Support），不會離開這台電腦。")
