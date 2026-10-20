@@ -27,6 +27,8 @@ class BlendKeyInputController: IMKInputController {
     )
 
     private var engine: InputEngine?
+    /// 上次問 AI 的組字內容：同樣內容不重問（被過濾掉時也不會一直重試）
+    private static var lastCompletionRequest: String?
     private let kNoRange = NSRange(location: NSNotFound, length: NSNotFound)
 
     override init!(server: IMKServer!, delegate: Any!, client: Any!) {
@@ -354,6 +356,7 @@ class BlendKeyInputController: IMKInputController {
 
     private func syncUI(_ engine: InputEngine, client: IMKTextInput) {
         setMarked(engine.preedit(), client: client)
+        requestCompletionIfNeeded(engine, client: client)
         if let sheet = engine.sheetView() ?? engine.englishHintView() ?? engine.associationView() {
             var lineRect = NSRect.zero
             client.attributes(forCharacterIndex: sheet.anchorUTF16, lineHeightRectangle: &lineRect)
@@ -371,6 +374,34 @@ class BlendKeyInputController: IMKInputController {
         } else {
             CandidatePanel.shared.dismiss(owner: self)
         }
+    }
+
+    /// AI 補句：組好的字變了就（停手後）問一次；結果回來時組字區還是同一句才顯示
+    private func requestCompletionIfNeeded(_ engine: InputEngine, client: IMKTextInput) {
+        guard UserDefaults.standard.bool(forKey: SettingKey.aiCompletion),
+              let text = engine.completionContext
+        else {
+            AICompletion.cancel()
+            Self.lastCompletionRequest = nil
+            return
+        }
+        guard engine.aiCompletion == nil, text != Self.lastCompletionRequest else { return }
+        Self.lastCompletionRequest = text
+        AICompletion.request(text: text, before: textBeforeComposition(client)) { [weak self] completion in
+            guard let self, let engine = self.engine, engine.completionContext == text else { return }
+            engine.aiCompletion = completion
+            self.syncUI(engine, client: client)
+        }
+    }
+
+    /// 文件裡組字區前面的文字（最多 40 字、只取同一行），給 AI 當上下文；app 不給讀就空字串
+    private func textBeforeComposition(_ client: IMKTextInput) -> String {
+        let marked = client.markedRange()
+        let location = marked.location != NSNotFound ? marked.location : client.selectedRange().location
+        guard location != NSNotFound, location > 0 else { return "" }
+        let length = min(40, location)
+        let text = client.attributedSubstring(from: NSRange(location: location - length, length: length))?.string ?? ""
+        return text.components(separatedBy: .newlines).last ?? ""
     }
 
     private func setMarked(

@@ -171,3 +171,48 @@ private func engineWithHabits() -> (InputEngine, UserPhraseStore) {
     type(engine, "su3cl3")
     #expect(engine.associationView() == nil)
 }
+
+// MARK: - AI 補句
+
+@Test func AI補句顯示在提示列最前面_右鍵接受_組字區一變就作廢() {
+    let (engine, _) = engineWithHabits()
+    type(engine, "su3cl3")
+    #expect(engine.completionContext == "你好")
+    engine.aiCompletion = "世界和平"
+    let view = engine.associationView()
+    #expect(view?.items.map(\.value) == ["世界和平", "世界"])
+    #expect(view?.items.first?.label == "✨→")
+
+    _ = engine.handle(.tab)  // Tab 選擇仍是聯想詞：反白跳過補句
+    #expect(engine.associationView()?.highlightedInPage == 1)
+    _ = engine.handle(.escape)
+
+    _ = engine.handle(.arrowRight)
+    #expect(engine.preedit().text == "你好世界和平")
+    #expect(engine.aiCompletion == nil)
+
+    engine.aiCompletion = "測試"
+    type(engine, "su3")  // 又打了字：舊補句作廢
+    #expect(engine.aiCompletion == nil)
+    _ = engine.handle(.arrowLeft)
+    #expect(engine.completionContext == nil)  // 游標回頭改字：不問 AI
+}
+
+@Test func AI補句滑鼠點選() {
+    let (engine, _) = engineWithHabits()
+    type(engine, "su3cl3")
+    engine.aiCompletion = "世界和平"
+    _ = engine.click(itemAt: 1)  // 第 2 格是聯想詞「世界」
+    #expect(engine.preedit().text == "你好世界")
+    engine.aiCompletion = "和平"
+    _ = engine.click(itemAt: 0)
+    #expect(engine.preedit().text == "你好世界和平")
+}
+
+@Test func AI補句輸出過濾() {
+    #expect(CompletionFilter.clean("已經到貨了。謝謝", text: "這批貨", before: "") == "已經到貨了")
+    #expect(CompletionFilter.clean("這批貨已經到了", text: "這批貨", before: "") == "已經到了")  // 重打原文
+    #expect(CompletionFilter.clean("我會幫你打字", text: "你好", before: "") == nil)  // 像客服回話
+    #expect(CompletionFilter.clean("寫字寫字寫字寫字", text: "他", before: "") == nil)  // 鬼打牆
+    #expect(CompletionFilter.clean("  ", text: "你好", before: "") == nil)
+}

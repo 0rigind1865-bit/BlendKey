@@ -112,6 +112,10 @@ public final class InputEngine {
     /// 按過 Tab、等使用者選第幾個；任何其他按鍵或組字區變動都會取消
     private var associationArmed = false
 
+    /// AI 補句：殼層非同步問 AI 後填入，顯示在提示列最前面，按 → 接受。
+    /// 組字區一有變動（rewalk）就作廢，所以不會顯示過期的補句。
+    public var aiCompletion: String?
+
     /// 全形標點開關（偏好設定）
     public var fullWidthPunctuation = true
     /// 中英之間自動加空白開關（偏好設定）：我愛mac → 我愛 mac
@@ -297,6 +301,11 @@ public final class InputEngine {
             if composer.isEmpty { cursor = max(0, cursor - 1) }
             return .consumed
         case .arrowRight:
+            // 游標在句尾時 → 原本沒有作用（Gmail 智慧撰寫也用 → 接受），拿來接受 AI 補句
+            if let completion = visibleCompletion {
+                acceptAssociation(completion)
+                return .consumed
+            }
             isInLiteralRun = false
             guard !isIdle else { return .ignored }
             if composer.isEmpty { cursor = min(elements.count, cursor + 1) }
@@ -465,10 +474,13 @@ public final class InputEngine {
     /// 聯想詞提示的呈現（橫排、標 1〜5；按了 Tab 第一個反白）
     public func associationView() -> SheetView? {
         let shown = visibleAssociations
-        guard !shown.isEmpty else { return nil }
+        let completion = visibleCompletion
+        guard !shown.isEmpty || completion != nil else { return nil }
+        var items = shown.enumerated().map { SheetView.Item(label: "\($0.offset + 1)", value: $0.element) }
+        if let completion { items.insert(SheetView.Item(label: "✨→", value: completion), at: 0) }
         return SheetView(
-            items: shown.enumerated().map { SheetView.Item(label: "\($0.offset + 1)", value: $0.element) },
-            highlightedInPage: associationArmed ? 0 : -1, pageIndex: 0, pageCount: 1,
+            items: items,
+            highlightedInPage: associationArmed ? (completion == nil ? 0 : 1) : -1, pageIndex: 0, pageCount: 1,
             // 對齊最後一個詞的開頭（同英文提示）。組字文字的「結尾」位置很多 app 回報不出來，窗會跑掉
             anchorUTF16: walked.last.map { elementTexts()[..<$0.start].reduce(0) { $0 + $1.utf16.count } } ?? 0,
             horizontal: true
@@ -711,11 +723,24 @@ public final class InputEngine {
 /// 目前該顯示的聯想詞（空＝不顯示）。其他視窗或提示開著時讓路。
     /// 跟著最後一個詞即時更新；打注音打到一半也維持顯示，不會每個音節閃一下。
     private var visibleAssociations: [String] {
-        guard associationsEnabled, sheet == nil, bilingual == nil, !isInLiteralRun,
-              englishHint == nil, numberHint == nil, let store = userPhrases,
-              cursor == elements.count, let last = walked.last  // 游標回頭改字時不提示
+        guard associationsEnabled, suggestionsAllowed, let store = userPhrases, let last = walked.last
         else { return [] }
         return store.nextWords(after: last.value, limit: 5)
+    }
+
+    private var visibleCompletion: String? { suggestionsAllowed ? aiCompletion : nil }
+
+    /// 提示列（聯想詞、AI 補句）可以出現的時機：其他視窗或提示開著時讓路，
+    /// 游標回頭改字時不提示
+    private var suggestionsAllowed: Bool {
+        sheet == nil && bilingual == nil && !isInLiteralRun && englishHint == nil && numberHint == nil
+            && cursor == elements.count && !elements.isEmpty
+    }
+
+    /// 要給 AI 接下去的「目前組好的字」：注音打完一個音節、游標在句尾時才有值
+    public var completionContext: String? {
+        guard composer.isEmpty, suggestionsAllowed else { return nil }
+        return elementTexts().joined()
     }
 
     private func handleArmedAssociations(_ key: KeyInput) -> Output? {
@@ -752,7 +777,8 @@ public final class InputEngine {
             return handle(.character(Character(String(index + 1))))
         }
         if englishHintView() != nil { return handle(.tab) }
-        let shown = visibleAssociations
+        var shown = visibleAssociations
+        if let completion = visibleCompletion { shown.insert(completion, at: 0) }  // 同提示列的順序
         guard shown.indices.contains(index) else { return .ignored }
         acceptAssociation(shown[index])
         return .consumed
@@ -933,6 +959,7 @@ public final class InputEngine {
 
     private func rewalk() {
         walked = decoder.walk(elements, pins: pins)
+        aiCompletion = nil  // 組字區變了：舊的補句作廢
     }
 
     /// 結束英文接續段（Shift 單擊時由殼層呼叫）

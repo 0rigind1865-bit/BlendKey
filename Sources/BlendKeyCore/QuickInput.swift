@@ -135,3 +135,27 @@ public enum DateMacro {
         ]
     }
 }
+
+/// AI 補句的輸出過濾（殼層問完 AI 後用）：清掉模型常見的毛病
+public enum CompletionFilter {
+    /// 清掉模型常見的毛病；看起來不像「接著打的字」就整個丟掉（回傳 nil）
+    public static func clean(_ output: String, text: String, before: String) -> String? {
+        var result = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        for given in [before + text, text] where !given.isEmpty && result.hasPrefix(given) {
+            result.removeFirst(given.count)  // 把原文重打一遍
+            break
+        }
+        // 只留到第一個句尾或換行：灰字補一小段就好
+        if let end = result.firstIndex(where: { "。！？\n".contains($0) }) {
+            result = String(result[..<end])
+        }
+        result = String(result.prefix(12)).trimmingCharacters(in: .whitespaces)
+        guard !result.isEmpty else { return nil }
+        // ponytail: 擋「像客服在回話」與鬼打牆的粗略規則，實際用下來再調
+        let chatty = ["我會", "幫你", "幫您", "您", "請告訴", "好的", "抱歉", "打字"]
+        if chatty.contains(where: result.contains) { return nil }
+        let chars = Array(result)
+        if chars.count >= 4, Set(chars).count * 2 <= chars.count { return nil }  // 寫字寫字寫字
+        return result
+    }
+}

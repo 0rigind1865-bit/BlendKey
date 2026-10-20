@@ -10,6 +10,7 @@ enum SettingKey {
     static let pageSize = "pageSize"
     static let fuzzyReading = "fuzzyReading"
     static let associations = "associations"
+    static let aiCompletion = "aiCompletion"
 
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [
@@ -20,6 +21,7 @@ enum SettingKey {
             pageSize: 9,
             fuzzyReading: false,
             associations: true,
+            aiCompletion: false,
         ])
     }
 }
@@ -32,6 +34,7 @@ private struct SettingsView: View {
     @AppStorage(SettingKey.pageSize) private var pageSize = 9
     @AppStorage(SettingKey.fuzzyReading) private var fuzzyReading = false
     @AppStorage(SettingKey.associations) private var associations = true
+    @AppStorage(SettingKey.aiCompletion) private var aiCompletion = false
     @State private var showingResetAlert = false
     @State private var didReset = false
 
@@ -56,6 +59,13 @@ private struct SettingsView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 Toggle("聯想詞（打字時提示你常接的下一個詞，Tab＋數字選）", isOn: $associations)
+                Toggle("AI 補句（實驗；提示列最前面 ✨，按 → 接受）", isOn: $aiCompletion)
+                    .disabled(!AICompletion.isAvailable)
+                Text(AICompletion.isAvailable
+                     ? "使用 Mac 內建的 Apple Intelligence，完全在本機執行、不連網。"
+                     : "需要 macOS 26 以上，並在「系統設定 › Apple Intelligence 與 Siri」開啟。")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
                 Picker("候選字窗每頁字數", selection: $pageSize) {
                     Text("7").tag(7)
                     Text("9").tag(9)
