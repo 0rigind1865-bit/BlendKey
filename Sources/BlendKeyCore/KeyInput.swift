@@ -9,8 +9,6 @@ public enum KeyInput: Equatable, Sendable {
     case englishLiteral(Character)
     case space
     case enter
-    /// Shift+Enter：接受第一個聯想詞並直接送出整句
-    case shiftEnter
     case escape
     case backspace
     case tab

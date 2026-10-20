@@ -104,6 +104,8 @@ public final class InputEngine {
     /// 聯想詞（像手機鍵盤）：組字中依「你打過的詞語接續」提示下一個詞。
     /// Tab 接受第一個、滑鼠點任一個。組字中的 Tab 原本就不送給 app（沒有別的用途），
     /// 而且跟英文／數字提示同一個規則「Tab＝接受小窗的提示」，所以不和任何快捷鍵衝突。
+    /// 不另設「接受並送出」鍵：Enter 的組合鍵各 app 都有用途（Shift+Enter 是聊天軟體換行），
+    /// 打完字習慣按它的人會被多塞一個詞。要送出就 Tab 再 Enter。
     /// ponytail: 上屏後不提示——那時 Tab 屬於 app（縮排、換欄），只剩滑鼠能選反而礙眼
     public var associationsEnabled = true
 
@@ -217,7 +219,7 @@ public final class InputEngine {
         default: literalRunDetector.reset()  // 只有連續打字才累積，其他鍵都打斷
         }
         switch key {
-        case .character, .space, .tab, .enter, .shiftEnter: break  // 這些要用到數字追蹤；character/space 自行管理
+        case .character, .space, .tab, .enter: break  // 這些要用到數字追蹤；character/space 自行管理
         default: cancelNumericRun()
         }
         if bilingual != nil, let output = handleInBilingual(key) {
@@ -265,11 +267,6 @@ public final class InputEngine {
             if !elements.isEmpty { openSheet(); return .consumed }
             return .ignored
         case .enter:
-            return flushOutput()
-        case .shiftEnter:
-            // 只接受聯想詞，不碰英文／數字提示（「打」＝283 會被誤換成數字）；
-            // 沒有聯想詞就跟 Enter 一樣。閒置時 flushOutput 會放行（app 的 Shift+Enter 換行不受影響）
-            if let word = visibleAssociations.first { acceptAssociation(word) }
             return flushOutput()
         case .escape:
             if isInLiteralRun { isInLiteralRun = false; return .consumed }
@@ -685,7 +682,7 @@ public final class InputEngine {
             current.highlighted = max(0, current.highlighted - pageSize)
             sheet = current
             return .consumed
-        case .enter, .shiftEnter:
+        case .enter:
             return choose(current.all[current.highlighted], kind: current.kind)
         case .escape:
             sheet = nil

@@ -124,17 +124,6 @@ private func engineWithHabits() -> (InputEngine, UserPhraseStore) {
     #expect(engine.associationView() == nil)  // 上屏後不提示（Tab 屬於 app）
 }
 
-@Test func ShiftEnter接受並直接送出_閒置時放行() {
-    let (engine, _) = engineWithHabits()
-    type(engine, "su3cl3")
-    #expect(engine.handle(.shiftEnter).commitText == "你好世界")
-    #expect(engine.isIdle)
-    #expect(engine.handle(.shiftEnter).handled == false)  // 閒置：給 app（聊天軟體的換行）
-
-    type(engine, "283")  // 「打」整串都是數字鍵：Shift+Enter 不能換成 283
-    #expect(engine.handle(.shiftEnter).commitText == "打")
-}
-
 @Test func 滑鼠點選聯想詞與候選字() {
     let (engine, store) = engineWithHabits()
     store.noteCommit(["你好", "是"])
