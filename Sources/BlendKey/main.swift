@@ -50,5 +50,14 @@ guard server != nil else {
 }
 Log.general.info("融鍵已啟動（connection: \(kConnectionName, privacy: .public)）")
 
+// pkill（install.sh 熱更新）／登出送 SIGTERM：學習資料是延後寫檔的，結束前先存
+signal(SIGTERM, SIG_IGN)
+let terminationSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+terminationSource.setEventHandler {
+    BlendKeyInputController.userPhrases.flush()
+    exit(0)
+}
+terminationSource.resume()
+
 NSApplication.shared.setActivationPolicy(.accessory)
 NSApplication.shared.run()

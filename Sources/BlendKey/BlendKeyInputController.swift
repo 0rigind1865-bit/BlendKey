@@ -19,8 +19,8 @@ class BlendKeyInputController: IMKInputController {
     private static var capsLockOverridden = false
     /// 這段放行字母在文件裡的起點（用位置算術驗證，不需 app 支援讀取內容）
     private static var passthroughAnchor: Int?
-    /// 使用者選字學習：全行程共用一份
-    private static let userPhrases = UserPhraseStore(
+    /// 使用者選字學習：全行程共用一份（main.swift 結束前要 flush）
+    static let userPhrases = UserPhraseStore(
         fileURL: FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
             .appendingPathComponent("BlendKey/userphrases.json")

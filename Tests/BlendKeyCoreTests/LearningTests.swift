@@ -89,6 +89,7 @@ private func 打擬界並上屏(_ store: UserPhraseStore) -> String? {
     #expect(store.bonus(reading: "ㄋㄧˇ", value: "妳") > 2.0)  // 舊權重保留
     store.noteWordCandidate(reading: "ㄋㄧˇ-ㄐㄧㄝˋ", value: "擬界")
     store.noteWordCandidate(reading: "ㄋㄧˇ-ㄐㄧㄝˋ", value: "擬界")
+    store.flush()
 
     let reloaded = UserPhraseStore(fileURL: url)  // 以新格式重載
     #expect(reloaded.bonus(reading: "ㄋㄧˇ", value: "妳") > 2.0)
@@ -158,6 +159,8 @@ private func 打擬界並上屏(_ store: UserPhraseStore) -> String? {
     let store = UserPhraseStore(fileURL: url)
     store.bump(reading: "ㄋㄧˇ", value: "妳")
     store.bump(reading: "ㄋㄧˇ", value: "妳")
+    #expect(!FileManager.default.fileExists(atPath: url.path))  // 延後寫檔：連打時還沒寫
+    store.flush()
 
     let reloaded = UserPhraseStore(fileURL: url)
     #expect(reloaded.bonus(reading: "ㄋㄧˇ", value: "妳") > 2.0)

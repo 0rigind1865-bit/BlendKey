@@ -136,7 +136,7 @@ public final class UserPhraseStore {
     /// 清除全部學習資料（偏好設定用）
     public func reset() {
         data = StoredData()
-        save()
+        flush()  // 使用者按了清除：立刻生效
     }
 
     private func pruneTransitionsIfNeeded() {
@@ -147,8 +147,23 @@ public final class UserPhraseStore {
         }
     }
 
+    /// 停手多久才寫檔：連打時每上屏一次就編碼整份 JSON（詞對滿額近 1 MB）會卡主執行緒
+    private let saveDelay: TimeInterval = 1.5
+    private var pendingSave: DispatchWorkItem?
+
+    /// 延後合併寫檔：連續變動只在停手後寫一次（假設只在主執行緒使用）
     private func save() {
-        // ponytail: 每次變動直接寫檔（檔案很小）；量大再改批次
+        guard fileURL != nil else { return }
+        pendingSave?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.flush() }
+        pendingSave = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + saveDelay, execute: work)
+    }
+
+    /// 立刻寫檔：行程結束前、測試重載前呼叫
+    public func flush() {
+        pendingSave?.cancel()
+        pendingSave = nil
         guard let fileURL else { return }
         try? FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true
