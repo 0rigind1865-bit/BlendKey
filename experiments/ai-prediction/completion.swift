@@ -2,14 +2,21 @@
 // 考題：Tests/Fixtures/sentences.tsv 的 90 句，只給前半段，比對 AI 補的和真正的後半段。
 // 重點指標是「開頭猜對幾個字」：灰字只要前面對，使用者就會接受。
 // 編譯：swiftc -O completion.swift -o /tmp/completion && /tmp/completion ../../Tests/Fixtures/sentences.tsv
+// 也可給「前半段⇥後半段」兩欄的檔案（例如在詞邊界切好的）：/tmp/completion cuts.tsv --cuts
 import Foundation
 import FoundationModels
 
 let path = CommandLine.arguments.dropFirst().first ?? "../../Tests/Fixtures/sentences.tsv"
-let sentences = try String(contentsOfFile: path, encoding: .utf8)
-    .split(separator: "\n")
-    .compactMap { $0.split(separator: "\t").last.map(String.init) }
-    .filter { $0.count >= 6 }
+let presplit = CommandLine.arguments.contains("--cuts")
+let lines = try String(contentsOfFile: path, encoding: .utf8).split(separator: "\n")
+/// (前半段, 後半段)：預設從句子正中間切（常切在詞中間）；--cuts 時照檔案
+let cases: [(given: String, truth: String)] = lines.compactMap { line in
+    let parts = line.split(separator: "\t").map(String.init)
+    if presplit { return parts.count == 2 ? (parts[0], parts[1]) : nil }
+    guard let sentence = parts.last, sentence.count >= 6 else { return nil }
+    let cut = sentence.count / 2
+    return (String(sentence.prefix(cut)), String(sentence.dropFirst(cut)))
+}
 
 let prompts: [(name: String, instructions: String)] = [
     ("接下去", """
@@ -47,10 +54,8 @@ for prompt in prompts {
     var prefixChars = 0, atLeast2 = 0, exact = 0
     var samples: [String] = []
     var blocked: [String] = []
-    for sentence in sentences {
-        let cut = sentence.count / 2
-        let given = String(sentence.prefix(cut))
-        let truth = String(sentence.dropFirst(cut).filter { !"，。！？".contains($0) })
+    for (given, fullTruth) in cases {
+        let truth = String(fullTruth.filter { !"，。！？".contains($0) })
 
         let session = LanguageModelSession(instructions: prompt.instructions)
         session.prewarm()
@@ -81,7 +86,7 @@ for prompt in prompts {
         }
     }
     func median(_ xs: [Int]) -> Int { xs.sorted()[xs.count / 2] }
-    let n = sentences.count
+    let n = cases.count
     print("=== 問法：\(prompt.name)（\(n) 句）===")
     samples.prefix(20).forEach { print($0) }
     print("""
