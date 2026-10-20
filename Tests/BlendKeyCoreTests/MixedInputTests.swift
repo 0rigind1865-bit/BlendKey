@@ -560,3 +560,23 @@ private func run(_ detector: inout ShiftTapDetector, _ events: [(ShiftTapDetecto
     engine.autoSpacing = false
     #expect(engine.handle(.enter).commitText == "你O K")
 }
+
+@Test func 英文沒按Tab直接接注音_自動拆開() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    engine.englishDetector = EnglishDetector(words: ["push"])
+    for key in "pushg4" { _ = engine.handle(.character(key)) }  // push＋ㄕˋ，混在一起會變 ㄕㄧㄣˋ
+    #expect(engine.handle(.enter).commitText == "push 是")
+}
+
+@Test func 查得到的音不拆() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    engine.englishDetector = EnglishDetector(words: ["su"])
+    for key in "su3" { _ = engine.handle(.character(key)) }  // 你，不該拆成 su＋3
+    #expect(engine.handle(.enter).commitText == "你")
+}
+
+@Test func 數字沒按Tab直接接注音_數字保留() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    for key in "150g4" { _ = engine.handle(.character(key)) }  // 150＋ㄕˋ，ㄕ 會蓋掉 ㄓ
+    #expect(engine.handle(.enter).commitText == "150 是")
+}

@@ -549,11 +549,19 @@ public final class InputEngine {
 
     private func handleCharacter(_ ch: Character) -> Output {
         let composerWasEmpty = composer.isEmpty
+        let keysBefore = composer.rawKeys
+        let overwritten = composer.overwriteCount > 0
         switch composer.press(ch) {
         case .absorbed:
             trackNumeric(ch, composerWasEmpty: composerWasEmpty)
             return .consumed
         case .composed(let syllable):
+            if let (word, rest) = splitLiteralPrefix(keysBefore + String(ch), composed: syllable, overwritten: overwritten) {
+                cancelNumericRun()
+                insertLiteral(word)
+                insertReading(rest)
+                return .consumed
+            }
             trackNumeric(ch, composerWasEmpty: composerWasEmpty)
             if !numericRaw.isEmpty { numericElements += 1 }
             insertReading(syllable)
@@ -579,6 +587,35 @@ public final class InputEngine {
             // 組字區有內容時打到非注音鍵：先上屏，再讓按鍵原樣送給應用程式
             return Output(handled: false, commitText: flush())
         }
+    }
+
+    /// 打完英文或數字沒按 Tab 就接著打注音：鍵全混進同一個音節（push＋上＝ㄕㄧㄤˋ、150＋個＝ㄍㄜˋ，
+    /// 前面的鍵被後面的覆寫掉）。這時拆成「英文詞／數字＋剩下組出的音節」，前段越長越優先。
+    /// 只在「整串查不到」或「中途有覆寫」時才試——正常打注音兩者都不會發生。
+    /// ponytail: 一聲（空白收尾）且整串都是字母時會先被英文提示攔去開中英並列窗，那條路不拆
+    private func splitLiteralPrefix(_ keys: String, composed: Syllable, overwritten: Bool) -> (String, Syllable)? {
+        let wholeKnown = !lexicon.unigrams(composed.canonical).isEmpty
+        guard overwritten || !wholeKnown else { return nil }
+        let chars = Array(keys)
+        // 剩下至少「一個注音＋聲調」兩鍵
+        for cut in stride(from: chars.count - 2, through: 1, by: -1) {
+            let prefix = String(chars[..<cut])
+            let isNumber = prefix.first!.isNumber && prefix.last!.isNumber
+                && prefix.allSatisfy { $0.isNumber || ".,".contains($0) }
+            // 整串本來查得到（只是有覆寫）時，英文詞要 3 字母以上，避免把改鍵誤判成英文
+            let isWord = englishHintEnabled && cut >= (wholeKnown ? 3 : 2)
+                && prefix.allSatisfy { $0.isLetter || $0.isNumber }
+                && englishDetector?.isWord(prefix) == true
+            guard isNumber || isWord else { continue }
+            var rest = SyllableComposer()
+            let tail = chars[cut...]
+            // 中途就組成音節（夾了聲調鍵）＝不是「一個音節」，跳過
+            guard tail.dropLast().allSatisfy({ rest.press($0) == .absorbed }),
+                  case .composed(let syllable) = rest.press(tail.last!),
+                  !lexicon.unigrams(syllable.canonical).isEmpty else { continue }
+            return (prefix, syllable)
+        }
+        return nil
     }
 
     private func handleInSheet(_ key: KeyInput) -> Output? {
