@@ -55,6 +55,7 @@ signal(SIGTERM, SIG_IGN)
 let terminationSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
 terminationSource.setEventHandler {
     BlendKeyInputController.userPhrases.flush()
+    SmartCorrection.stop()  // 模型伺服器跟著關（萬一沒關到，外層 sh 也會在 2 秒內收掉）
     exit(0)
 }
 terminationSource.resume()

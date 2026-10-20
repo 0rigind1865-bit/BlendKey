@@ -11,6 +11,7 @@ enum SettingKey {
     static let fuzzyReading = "fuzzyReading"
     static let associations = "associations"
     static let aiCompletion = "aiCompletion"
+    static let smartCorrection = "smartCorrection"
 
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [
@@ -22,6 +23,7 @@ enum SettingKey {
             fuzzyReading: false,
             associations: true,
             aiCompletion: false,
+            smartCorrection: false,
         ])
     }
 }
@@ -35,12 +37,21 @@ private struct SettingsView: View {
     @AppStorage(SettingKey.fuzzyReading) private var fuzzyReading = false
     @AppStorage(SettingKey.associations) private var associations = true
     @AppStorage(SettingKey.aiCompletion) private var aiCompletion = false
+    @AppStorage(SettingKey.smartCorrection) private var smartCorrection = false
     @State private var showingResetAlert = false
     @State private var didReset = false
 
     /// 由控制器注入：清除學習資料、開啟學習資料視窗
     var onReset: () -> Void = {}
     var onShowLearnedData: () -> Void = {}
+
+    private var smartCorrectionNote: String {
+        if SmartCorrection.serverPath == nil { return "需要 llama.cpp：在終端機執行 brew install llama.cpp" }
+        if !SmartCorrection.modelExists {
+            return "需要模型檔，放在：\(SmartCorrection.modelURL?.path ?? "")"
+        }
+        return "使用開源模型 Breeze（聯發科），在本機執行、不連網。開啟時約佔 4 GB 記憶體，關閉就釋放。只會換成同音字。"
+    }
 
     var body: some View {
         Form {
@@ -59,18 +70,27 @@ private struct SettingsView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 Toggle("聯想詞（打字時提示你常接的下一個詞，Tab＋數字選）", isOn: $associations)
-                Toggle("AI 補句（實驗；提示列最前面 ✨，按 → 接受）", isOn: $aiCompletion)
+
+                Picker("候選字窗每頁字數", selection: $pageSize) {
+                    Text("7").tag(7)
+                    Text("9").tag(9)
+                }
+                .pickerStyle(.segmented)
+            }
+            Section("智慧輸入（實驗）") {
+                Toggle("AI 補句（提示列最前面 ✨，按 → 接受）", isOn: $aiCompletion)
                     .disabled(!AICompletion.isAvailable)
                 Text(AICompletion.isAvailable
                      ? "使用 Mac 內建的 Apple Intelligence，完全在本機執行、不連網。"
                      : "需要 macOS 26 以上，並在「系統設定 › Apple Intelligence 與 Siri」開啟。")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                Picker("候選字窗每頁字數", selection: $pageSize) {
-                    Text("7").tag(7)
-                    Text("9").tag(9)
-                }
-                .pickerStyle(.segmented)
+                Toggle("AI 校正（停手時自動改掉組字區的同音錯字）", isOn: $smartCorrection)
+                    .disabled(!SmartCorrection.modelExists || SmartCorrection.serverPath == nil)
+                    .onChange(of: smartCorrection) { _, enabled in SmartCorrection.setEnabled(enabled) }
+                Text(smartCorrectionNote)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
             Section("學習資料") {
                 Text("融鍵會記住你選過的字、自動學成新詞，並記錄詞與詞的接續習慣，讓斷詞越用越準。資料只存在本機（Application Support），不會離開這台電腦。")

@@ -29,6 +29,8 @@ class BlendKeyInputController: IMKInputController {
     private var engine: InputEngine?
     /// 上次問 AI 的組字內容：同樣內容不重問（被過濾掉時也不會一直重試）
     private static var lastCompletionRequest: String?
+    /// 上次送去校正的組字內容：同樣內容不重問
+    private static var lastCorrectionRequest: String?
     /// AI 補句至少要看到幾個字（組字中＋游標前同一行）：字太少 AI 多半亂猜，跳出來只是干擾。
     /// ponytail: 固定 6 字，嫌早或嫌晚再調、或改成偏好設定
     private static let minimumCompletionContext = 6
@@ -343,6 +345,7 @@ class BlendKeyInputController: IMKInputController {
             engine.autoSpacing = defaults.bool(forKey: SettingKey.autoSpacing)
             engine.pageSize = defaults.integer(forKey: SettingKey.pageSize)
             engine.associationsEnabled = defaults.bool(forKey: SettingKey.associations)
+            SmartCorrection.setEnabled(defaults.bool(forKey: SettingKey.smartCorrection))
             let fuzzy = defaults.bool(forKey: SettingKey.fuzzyReading)
             if engine.fuzzyReadingEnabled != fuzzy { engine.fuzzyReadingEnabled = fuzzy }
         }
@@ -360,6 +363,7 @@ class BlendKeyInputController: IMKInputController {
     private func syncUI(_ engine: InputEngine, client: IMKTextInput) {
         setMarked(engine.preedit(), client: client)
         requestCompletionIfNeeded(engine, client: client)
+        requestCorrectionIfNeeded(engine, client: client)
         if let sheet = engine.sheetView() ?? engine.englishHintView() ?? engine.associationView() {
             var lineRect = NSRect.zero
             client.attributes(forCharacterIndex: sheet.anchorUTF16, lineHeightRectangle: &lineRect)
@@ -398,6 +402,30 @@ class BlendKeyInputController: IMKInputController {
         AICompletion.request(text: text, before: before) { [weak self] completion in
             guard let self, let engine = self.engine, engine.completionContext == text else { return }
             engine.aiCompletion = completion
+            self.syncUI(engine, client: client)
+        }
+    }
+
+    /// AI 校正：組字區變了就（停手後）問一次；回來時組字區還是同一句才套用（只採用同音的改動）
+    private func requestCorrectionIfNeeded(_ engine: InputEngine, client: IMKTextInput) {
+        guard UserDefaults.standard.bool(forKey: SettingKey.smartCorrection),
+              let target = engine.correctionTarget
+        else {
+            SmartCorrection.cancel()
+            Self.lastCorrectionRequest = nil
+            return
+        }
+        guard target.text != Self.lastCorrectionRequest else { return }
+        let before = textBeforeComposition(client)
+        guard (before + target.text).filter({ !$0.isWhitespace }).count >= Self.minimumCompletionContext else {
+            SmartCorrection.cancel()
+            return
+        }
+        Self.lastCorrectionRequest = target.text
+        SmartCorrection.request(text: target.text, before: before) { [weak self] corrected in
+            guard let self, let engine = self.engine, engine.applyCorrection(corrected, to: target.text) else { return }
+            Log.general.info("AI 校正：已改正")
+            Self.lastCorrectionRequest = engine.correctionTarget?.text  // 改好的句子不再重問
             self.syncUI(engine, client: client)
         }
     }

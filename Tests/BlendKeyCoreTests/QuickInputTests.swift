@@ -216,3 +216,31 @@ private func engineWithHabits() -> (InputEngine, UserPhraseStore) {
     #expect(CompletionFilter.clean("寫字寫字寫字寫字", text: "他", before: "") == nil)  // 鬼打牆
     #expect(CompletionFilter.clean("  ", text: "你好", before: "") == nil)
 }
+
+// MARK: - AI 校正
+
+@Test func AI校正只採用同音的改動_改到的詞可再改回() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    type(engine, "su3cl3")  // 你好
+    let target = engine.correctionTarget
+    #expect(target?.text == "你好")
+    #expect(target?.readings == ["ㄋㄧˇ", "ㄏㄠˇ"])
+
+    #expect(engine.applyCorrection("妳好", to: "你好"))  // 妳＝ㄋㄧˇ 同音：採用
+    #expect(engine.preedit().text == "妳好")
+    #expect(!engine.applyCorrection("妳高", to: "妳好"))  // 高＝ㄍㄠ 不同音：不採用
+    #expect(engine.preedit().text == "妳好")
+    #expect(!engine.applyCorrection("你好嗎", to: "妳好"))  // 字數不對
+    #expect(!engine.applyCorrection("你好", to: "舊句子"))  // 組字區已經變了
+
+    _ = engine.handle(.arrowDown)  // 改到的詞照常能按 ↓ 換回來
+    #expect(engine.sheetView()?.items.map(\.value).contains("你好") == true)
+}
+
+@Test func AI校正不碰夾英文的組字區() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    type(engine, "su3")
+    _ = engine.handle(.englishLiteral("A"))
+    _ = engine.handle(.escape)  // 結束英文段
+    #expect(engine.correctionTarget == nil)
+}

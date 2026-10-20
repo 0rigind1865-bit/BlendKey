@@ -737,6 +737,48 @@ public final class InputEngine {
             && cursor == elements.count && !elements.isEmpty
     }
 
+    /// AI 校正的對象：組好的字與每個字的注音。只在「每個音節剛好一個字」時提供
+    /// （夾了英文、數字等直出片段就不校正），游標要在句尾（回頭改字時不動它）。
+    public var correctionTarget: (text: String, readings: [String])? {
+        guard composer.isEmpty, sheet == nil, bilingual == nil, !isInLiteralRun,
+              !elements.isEmpty, cursor == elements.count else { return nil }
+        var readings: [String] = []
+        for element in elements {
+            guard case .reading(let reading) = element else { return nil }
+            readings.append(reading)
+        }
+        let texts = elementTexts()
+        guard texts.allSatisfy({ $0.count == 1 }) else { return nil }
+        return (texts.joined(), readings)
+    }
+
+    /// 套用 AI 校正：組字區還是同一句、字數一樣才套用；只採用「同音」的改動（保險），
+    /// 改到的詞以 pin 固定（跟使用者自己選字一樣，按 ↓ 還能改回來，但不記入選字學習）。
+    /// - Returns: 有沒有真的改到字
+    @discardableResult
+    public func applyCorrection(_ corrected: String, to original: String) -> Bool {
+        guard let target = correctionTarget, target.text == original, corrected.count == original.count
+        else { return false }
+        let old = Array(original), proposed = Array(corrected)
+        var chars = old
+        for index in old.indices where proposed[index] != old[index] {
+            let candidate = String(proposed[index])
+            if lexicon.unigrams(target.readings[index]).contains(where: { $0.value == candidate }) {
+                chars[index] = proposed[index]
+            }
+        }
+        guard chars != old else { return false }
+        for segment in walked where (segment.start..<segment.end).contains(where: { chars[$0] != old[$0] }) {
+            pins.removeAll { $0.start < segment.end && segment.start < $0.end }
+            pins.append(DecodedSegment(
+                start: segment.start, length: segment.length,
+                value: String(chars[segment.start..<segment.end]), reading: segment.reading
+            ))
+        }
+        rewalk()
+        return true
+    }
+
     /// 要給 AI 接下去的「目前組好的字」：注音打完一個音節、游標在句尾時才有值
     public var completionContext: String? {
         guard composer.isEmpty, suggestionsAllowed else { return nil }
