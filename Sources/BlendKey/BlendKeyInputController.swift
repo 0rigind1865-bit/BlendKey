@@ -334,17 +334,18 @@ class BlendKeyInputController: IMKInputController {
         )
     }
 
-    /// 辨識中：以組字區顯示 🎤＋目前聽到的字
+    /// 辨識中：游標旁顯示聲波，聽到的字以組字區（底線）即時顯示
     private func showVoice(_ text: String, client: IMKTextInput) {
-        let shown = "🎤" + text
         client.setMarkedText(
-            NSAttributedString(string: shown, attributes: [.underlineStyle: NSUnderlineStyle.single.rawValue]),
-            selectionRange: NSRange(location: shown.utf16.count, length: 0),
+            NSAttributedString(string: text, attributes: [.underlineStyle: NSUnderlineStyle.single.rawValue]),
+            selectionRange: NSRange(location: text.utf16.count, length: 0),
             replacementRange: kNoRange
         )
+        ModeHUD.shared.showListening(near: caretLineRect(client))
     }
 
     private func endVoice(_ text: String, client: IMKTextInput) {
+        ModeHUD.shared.hide()
         if text.isEmpty {
             client.setMarkedText("", selectionRange: NSRange(location: 0, length: 0), replacementRange: kNoRange)
         } else {

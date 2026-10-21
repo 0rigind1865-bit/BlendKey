@@ -1,7 +1,7 @@
 import Cocoa
 import SwiftUI
 
-/// 切換中英時在游標旁閃現「中」／「A」的提示（0.7 秒後淡出）。
+/// 切換中英時在游標旁閃現「中」／「A」的提示（0.7 秒後淡出）；語音輸入中顯示聲波。
 /// 與候選窗同樣採常駐單例重複使用。
 final class ModeHUD {
     static let shared = ModeHUD()
@@ -48,12 +48,44 @@ final class ModeHUD {
     }
 
     func flash(chinese: Bool, near lineRect: NSRect) {
-        hideWork?.cancel()
-        hosting.rootView = AnyView(
+        show(
             Text(chinese ? "中" : "A")
                 .font(.system(size: 26, weight: .semibold, design: .rounded))
-                .frame(width: 54, height: 54)
+                .frame(width: 54, height: 54),
+            near: lineRect
         )
+        hide(after: 0.7)
+    }
+
+    /// 語音輸入中：游標旁顯示跳動的聲波，直到 hide()
+    func showListening(near lineRect: NSRect) {
+        show(
+            Image(systemName: "waveform")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(.red)
+                .symbolEffect(.variableColor.iterative, isActive: true)
+                .frame(width: 54, height: 54),
+            near: lineRect
+        )
+    }
+
+    func hide(after delay: TimeInterval = 0) {
+        let work = DispatchWorkItem { [panel] in
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.25
+                panel.animator().alphaValue = 0
+            } completionHandler: {
+                panel.orderOut(nil)
+            }
+        }
+        hideWork?.cancel()
+        hideWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private func show(_ content: some View, near lineRect: NSRect) {
+        hideWork?.cancel()
+        hosting.rootView = AnyView(content)
         var origin = NSPoint(x: lineRect.minX, y: lineRect.minY - 8 - 54)
         let screen = NSScreen.screens.first { NSPointInRect(lineRect.origin, $0.frame) } ?? NSScreen.main
         if let visible = screen?.visibleFrame {
@@ -66,16 +98,5 @@ final class ModeHUD {
         panel.setFrameOrigin(origin)
         panel.alphaValue = 1
         panel.orderFrontRegardless()
-
-        let work = DispatchWorkItem { [panel] in
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.25
-                panel.animator().alphaValue = 0
-            } completionHandler: {
-                panel.orderOut(nil)
-            }
-        }
-        hideWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7, execute: work)
     }
 }
