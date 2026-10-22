@@ -53,12 +53,11 @@ private func 打擬界並上屏(_ store: UserPhraseStore) -> String? {
     return engine.handle(.enter).commitText
 }
 
-@Test func 連續兩次改字上屏自動造詞() {
+@Test func 改字一次上屏就自動造詞() {
     let store = UserPhraseStore(fileURL: nil)
-    #expect(打擬界並上屏(store) == "擬界")  // 第一次：候補
-    #expect(打擬界並上屏(store) == "擬界")  // 第二次：升格為使用者詞
+    #expect(打擬界並上屏(store) == "擬界")  // 第一次：直接升格為使用者詞
 
-    // 第三次：不用改字，直接組出「擬界」
+    // 第二次：不用改字，直接組出「擬界」
     let engine = InputEngine(lexicon: 測試詞庫)
     engine.userPhrases = store
     for key in "su3ru,4" { _ = engine.handle(.character(key)) }
@@ -68,14 +67,13 @@ private func 打擬界並上屏(_ store: UserPhraseStore) -> String? {
     #expect(engine.sheetView()?.items.contains { $0.value == "擬界" } == true)
 }
 
-@Test func 只改字一次不會造詞() {
+@Test func 沒改字的上屏不會造詞() {
     let store = UserPhraseStore(fileURL: nil)
-    #expect(打擬界並上屏(store) == "擬界")
-
     let engine = InputEngine(lexicon: 測試詞庫)
     engine.userPhrases = store
     for key in "su3ru,4" { _ = engine.handle(.character(key)) }
-    #expect(engine.preedit().text != "擬界")  // 一次只是候補，尚未成詞
+    _ = engine.handle(.enter)  // 照預設組字直接上屏
+    #expect(store.entries(.word).isEmpty)  // 守門：沒有改字就不學新詞
 }
 
 @Test func 舊版學習檔案自動遷移() throws {
@@ -131,6 +129,40 @@ private func 打擬界並上屏(_ store: UserPhraseStore) -> String? {
     second.userPhrases = store
     for key in "g4su3" { _ = second.handle(.character(key)) }
     #expect(second.preedit().text == "是妳")
+}
+
+@Test func 前文只留結尾最多兩個漢字() {
+    #expect(InputEngine.contextKey("我很好") == "很好")
+    #expect(InputEngine.contextKey("ok好") == "好")
+    #expect(InputEngine.contextKey("好，") == "")  // 標點結尾＝句首
+    #expect(InputEngine.contextKey("") == "")
+}
+
+@Test func 前文當第一個詞的上下文() {
+    let store = UserPhraseStore(fileURL: nil)
+    store.noteCommit(["是", "妳"])  // 使用者打過兩次「是妳」
+    store.noteCommit(["是", "妳"])
+    let withContext = InputEngine(lexicon: 測試詞庫)
+    withContext.userPhrases = store
+    withContext.leftContext = "我是"  // 2 字前文沒打過 → 退到最後 1 字「是」
+    for key in "su3" { _ = withContext.handle(.character(key)) }
+    #expect(withContext.preedit().text == "妳")
+
+    let plain = InputEngine(lexicon: 測試詞庫)  // 沒有前文：維持預設
+    plain.userPhrases = store
+    for key in "su3" { _ = plain.handle(.character(key)) }
+    #expect(plain.preedit().text == "你")
+}
+
+@Test func 分段上屏也學得到前文接續() {
+    let store = UserPhraseStore(fileURL: nil)
+    let engine = InputEngine(lexicon: 測試詞庫)
+    engine.userPhrases = store
+    engine.leftContext = "好，是"  // 只取標點後的「是」
+    for key in "su3" { _ = engine.handle(.character(key)) }
+    #expect(engine.handle(.enter).commitText == "你")
+    #expect(store.transitionBonus(from: "是", to: "你") > 0)
+    #expect(store.transitionBonus(from: "，是", to: "你") == 0)
 }
 
 @Test func 未學過的組合完全不受影響() {

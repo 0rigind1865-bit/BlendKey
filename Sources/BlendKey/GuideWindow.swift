@@ -42,7 +42,7 @@ private struct GuideView: View {
     private let smart = [
         Shortcut(keys: "打錯自己會修", detail: "英文模式下誤打注音，或大寫燈亮著打注音，融鍵會自動切回中文並把已打出的字母收回重組"),
         Shortcut(keys: "越用越準", detail: "選過的字、改過的詞、詞語接續習慣都會記住，同一句話打過幾次之後就不用再改"),
-        Shortcut(keys: "自動造詞", detail: "同一串注音連續兩次被你改字後上屏，就自動學成新詞"),
+        Shortcut(keys: "自動造詞", detail: "一串注音被你逐字改字後上屏，就自動學成新詞"),
     ]
 
     var body: some View {

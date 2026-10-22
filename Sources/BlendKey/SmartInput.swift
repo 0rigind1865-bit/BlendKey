@@ -178,7 +178,8 @@ enum SmartInput {
             else { return DispatchQueue.main.async { failed?() } }
             DispatchQueue.main.async {
                 let elapsed = Int(Date().timeIntervalSince(started) * 1000)
-                Log.general.info("智慧輸入（\(kind.label, privacy: .public)）：\(elapsed, privacy: .public) ms")
+                // notice 才會持久化，事後能用 log show 統計延遲（info 只留在記憶體）
+                Log.general.notice("智慧輸入（\(kind.label, privacy: .public)）：\(elapsed, privacy: .public) ms")
                 handle(content)
             }
         }

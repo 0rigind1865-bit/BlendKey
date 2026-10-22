@@ -131,6 +131,21 @@ public final class InputEngine {
     public var englishHintEnabled = true
     /// 英文詞偵測器（載妥後注入；nil 時只剩覆寫啟發式）
     public var englishDetector: EnglishDetector?
+    /// 游標前已上屏的文字（控制器在組字開始前餵進來；CLI／測試可不設）。
+    /// 只留結尾連續的漢字、最多 2 個，遇標點英數就停；只在記憶體、不寫檔
+    public var leftContext = "" {
+        didSet { decoder.leftContext = Self.contextKey(leftContext) }
+    }
+
+    public static func contextKey(_ text: String) -> String {
+        var key: [Character] = []
+        for ch in text.reversed() {
+            guard ch.unicodeScalars.first?.properties.isIdeographic == true, key.count < 2 else { break }
+            key.insert(ch, at: 0)
+        }
+        return String(key)
+    }
+
     /// 使用者選字學習與自造詞（nil 時不學習）
     public var userPhrases: UserPhraseStore? {
         didSet {
@@ -344,9 +359,14 @@ public final class InputEngine {
     /// 失焦／換行時把組字區內容送出
     public func flush() -> String? {
         learnPinnedWords()
-        // 上屏的詞序列＝真實連續文本語料，記下詞對供下次斷詞參考
-        if composer.isEmpty, walked.count >= 2 {
-            userPhrases?.noteCommit(walked.map(\.value))
+        // 上屏的詞序列＝真實連續文本語料，記下詞對供下次斷詞參考。
+        // 前文當第一個詞的前詞：分段送出（先「好」再「吧」）也學得到接續；
+        // 2 字前文另記最後 1 字，查詢時退而求其次用得上
+        if composer.isEmpty, !walked.isEmpty, let store = userPhrases {
+            let words = walked.map(\.value)
+            let context = decoder.leftContext
+            store.noteCommit((context.isEmpty ? [] : [context]) + words)
+            if context.count == 2 { store.noteCommit([String(context.suffix(1)), words[0]]) }
         }
         let text = committedText()
         reset()
@@ -354,7 +374,7 @@ public final class InputEngine {
     }
 
     /// 自動造詞：上屏時，把「連續被改字（pin）的單字串」回報為造詞候補。
-    /// 連續兩次上屏同一串，就升格為使用者詞（UserPhraseStore 負責門檻）。
+    /// 升格門檻由 UserPhraseStore 決定（目前一次就學）。
     private func learnPinnedWords() {
         guard let store = userPhrases else { return }
         var run: [DecodedSegment] = []

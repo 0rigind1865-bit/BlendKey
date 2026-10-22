@@ -87,7 +87,7 @@ private struct LearnedDataView: View {
     private var explanation: String {
         switch kind {
         case .selection: return "你在候選字窗選過的字——選越多次，之後排得越前面。"
-        case .word: return "同一串注音連續兩次被你改字後上屏，就自動學成新詞。"
+        case .word: return "一串注音被你逐字改字後上屏，就自動學成新詞。"
         case .transition: return "從你上屏的句子學到的詞語接續習慣，讓斷詞越用越準。"
         }
     }

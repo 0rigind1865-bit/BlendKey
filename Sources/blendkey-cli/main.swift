@@ -8,11 +8,18 @@ var args = Array(CommandLine.arguments.dropFirst())
 
 // 評估模式：blendkey-cli --eval <tsv>（每行「讀音1-讀音2-…⇥預期句子」），量測組句正確率
 // 可加 --train <tsv>：先把該檔的句子當作使用者打過的內容學進去，再評估
+// 可加 --baseline <data.txt>：同時用另一份詞庫解，逐句配對報「改對／改壞」與 McNemar p
+//（總數差 1 句是雜訊；90 句要改對比改壞多到約 6:0 才算顯著）
 var evalPath: String?
 var trainPath: String?
-for flag in ["--eval", "--train"] {
+var baselinePath: String?
+for flag in ["--eval", "--train", "--baseline"] {
     if let index = args.firstIndex(of: flag), index + 1 < args.count {
-        if flag == "--eval" { evalPath = args[index + 1] } else { trainPath = args[index + 1] }
+        switch flag {
+        case "--eval": evalPath = args[index + 1]
+        case "--train": trainPath = args[index + 1]
+        default: baselinePath = args[index + 1]
+        }
         args.removeSubrange(index...(index + 1))
     }
 }
@@ -74,7 +81,10 @@ if let evalPath {
         print("訓練：\(rows(trainPath).count) 句 → \(store.transitionCount) 組詞對")
     }
 
+    let baseline = baselinePath.flatMap { try? String(contentsOfFile: $0, encoding: .utf8) }
+        .map { SentenceDecoder(lexicon: Lexicon(dataText: $0)) }
     var sentenceHits = 0, total = 0, charHits = 0, charTotal = 0
+    var fixed = 0, broken = 0
     for line in (try? String(contentsOfFile: evalPath, encoding: .utf8))?.split(separator: "\n") ?? [] {
         let parts = line.split(separator: "\t")
         guard parts.count == 2 else { continue }
@@ -85,11 +95,25 @@ if let evalPath {
         if got == want { sentenceHits += 1 } else { print("✗ \(want)　→　\(got)") }
         charTotal += want.count
         charHits += zip(got, want).count { $0 == $1 }
+        if let baseline {
+            let old = baseline.walk(elements).map(\.value).joined()
+            if old != want, got == want { fixed += 1; print("  ↑ 改對（原本 \(old)）") }
+            if old == want, got != want { broken += 1; print("  ↓ 改壞（原本對）") }
+        }
     }
     let sentenceRate = Double(sentenceHits) / Double(max(total, 1)) * 100
     let charRate = Double(charHits) / Double(max(charTotal, 1)) * 100
     print(String(format: "\n整句正確 %d/%d（%.0f%%）　單字正確率 %.1f%%",
                  sentenceHits, total, sentenceRate, charRate))
+    if baseline != nil {
+        // 精確 McNemar（雙尾二項檢定）：只看改對、改壞兩類不一致的句子
+        let n = fixed + broken, k = min(fixed, broken)
+        func choose(_ n: Int, _ k: Int) -> Double { (0..<k).reduce(1.0) { $0 * Double(n - $1) / Double($1 + 1) } }
+        let tail = (0...k).reduce(0.0) { $0 + choose(n, $1) } / pow(2.0, Double(n))
+        let p = n == 0 ? 1.0 : min(1.0, 2 * tail)
+        print(String(format: "對照基準：改對 %d、改壞 %d、淨 %+d、McNemar p = %.3f%@",
+                     fixed, broken, fixed - broken, p, p < 0.05 ? "（顯著）" : "（雜訊範圍內）"))
+    }
     exit(0)
 }
 

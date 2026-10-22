@@ -2,7 +2,7 @@ import Foundation
 
 /// 使用者選字學習：
 /// 1. 選字權重——「這個讀音你選過哪個字／詞、選過幾次」，影響排序與組句
-/// 2. 自動造詞——同一串音節連續兩次被改字後上屏，升格為使用者新詞
+/// 2. 自動造詞——一串音節被逐字改字後上屏，就升格為使用者新詞（蘋果注音也是一次就記）
 /// JSON 存於 Application Support；可自動遷移第一版（純選字權重）格式。
 public final class UserPhraseStore {
 
@@ -17,7 +17,8 @@ public final class UserPhraseStore {
     private let fileURL: URL?
     /// ponytail: 使用者詞固定分數 -8（約當常用詞），穩贏單字拆解路徑；不夠再改動態
     private let userWordScore = -8.0
-    private let promotionThreshold = 2
+    /// 一次就學：守門是「必須有改字」，不是每次上屏都學（善解量過後者會學進三成碎片）
+    private let promotionThreshold = 1
     /// ponytail: 詞對上限 20,000，超過就丟掉只出現一次的；不夠再改 LRU
     private let transitionLimit = 20_000
 
@@ -47,7 +48,7 @@ public final class UserPhraseStore {
 
     // MARK: - 自動造詞
 
-    /// 上屏時回報一段「被改字的連續單字串」；出現第二次即升格為使用者詞
+    /// 上屏時回報一段「被改字的連續單字串」；達門檻即升格為使用者詞（pendingWords 只為相容舊檔保留）
     public func noteWordCandidate(reading: String, value: String) {
         if data.words[reading]?[value] != nil {
             data.words[reading]![value]! += 1  // 已是使用者詞：記次數即可

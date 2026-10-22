@@ -39,6 +39,9 @@ public struct SentenceDecoder {
     /// 詞對加分的權重：2.0 由 --eval --train 掃描而得
     /// （同句打 1 次 87%、3 次 96%；未學過的句子完全不受影響）
     public var transitionWeight = 2.0
+    /// 游標前已上屏文字的結尾（最多 2 個漢字，由 InputEngine 截好）：第一個詞的詞對加分條件。
+    /// 先送出「好」再打 ㄅㄚ˙ 時，第一個詞不再當成句首算，「吧」才贏得過「巴」。空字串＝句首
+    public var leftContext = ""
     /// 每個跨距取幾個候選進詞圖：>1 才讓上下文有選擇餘地
     public var candidateDepth = 4
     /// 相似音（ㄓㄗ、ㄕㄙ、ㄣㄥ…互通）：開啟後打錯也找得到字
@@ -115,7 +118,8 @@ public struct SentenceDecoder {
                 for node in nodes(elements, start: start, end: end, pins: pins) {
                     let base = node.score + nodePenalty
                     if start == 0 {
-                        states[end].append(State(segment: node.segment, score: base, prevIndex: -1))
+                        let score = base + contextBonus(node.segment.value)
+                        states[end].append(State(segment: node.segment, score: score, prevIndex: -1))
                         continue
                     }
                     var bestScore = -Double.infinity
@@ -147,6 +151,16 @@ public struct SentenceDecoder {
             index = state.prevIndex
         }
         return result.reversed()
+    }
+
+    /// 前文→第一個詞的詞對加分：先試整段前文（2 字），再試最後 1 字；都沒打過就 0
+    private func contextBonus(_ next: String) -> Double {
+        guard let transitionBonus, !leftContext.isEmpty else { return 0 }
+        for key in [leftContext, String(leftContext.suffix(1))] where !key.isEmpty {
+            let bonus = transitionBonus(key, next)
+            if bonus > 0 { return transitionWeight * bonus }
+        }
+        return 0
     }
 
     /// 候選字窗用：從 start 起所有跨距的候選，長詞在前、同長依分數（含學習加權）

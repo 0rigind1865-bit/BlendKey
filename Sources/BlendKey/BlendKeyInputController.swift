@@ -158,6 +158,7 @@ class BlendKeyInputController: IMKInputController {
             return false
         }
 
+        if engine.isIdle { engine.leftContext = textBeforeComposition(client) }  // 組字開始前讀一次
         let wasInLiteralRun = engine.isInLiteralRun
         let output = engine.handle(key)
         if let commit = output.commitText {
