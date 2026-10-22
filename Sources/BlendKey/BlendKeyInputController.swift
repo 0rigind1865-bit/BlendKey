@@ -327,6 +327,8 @@ class BlendKeyInputController: IMKInputController {
             return
         }
         if let engine { flushBeforePassthrough(engine, client: client) }
+        // 智慧輸入總開關有開：講話的同時先把模型伺服器叫起來，講完才來得及整理
+        if UserDefaults.standard.bool(forKey: SettingKey.smartInput) { SmartInput.setEnabled(true) }
         showVoice("", client: client)
         voice.start(
             onPartial: { [weak self] text in self?.showVoice(text, client: client) },
@@ -344,12 +346,19 @@ class BlendKeyInputController: IMKInputController {
         ModeHUD.shared.showListening(near: caretLineRect(client))
     }
 
+    /// 定案：智慧輸入總開關有開就先交給本機模型去贅字、修標點（像 Typeless），再上屏；沒開就直接上屏
     private func endVoice(_ text: String, client: IMKTextInput) {
         ModeHUD.shared.hide()
         if text.isEmpty {
             client.setMarkedText("", selectionRange: NSRange(location: 0, length: 0), replacementRange: kNoRange)
-        } else {
-            client.insertText(text, replacementRange: kNoRange)
+            return
+        }
+        guard UserDefaults.standard.bool(forKey: SettingKey.smartInput), SmartInput.isRunning else {
+            return client.insertText(text, replacementRange: kNoRange)
+        }
+        // ponytail: 整理中（約 1～3 秒）原文先留在組字區；這時打字會先插入整理結果，再調
+        SmartInput.polish(text: text) { polished in
+            client.insertText(polished, replacementRange: self.kNoRange)
         }
     }
 

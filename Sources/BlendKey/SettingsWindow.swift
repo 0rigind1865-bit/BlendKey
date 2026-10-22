@@ -99,7 +99,7 @@ private struct SettingsView: View {
         Form {
             Section("語音輸入") {
                 Toggle("單按右 Option 開始講話，再按一下結束", isOn: $voiceInput)
-                note("打一半的字會先送出，講的話接在後面。Esc 取消。使用 Mac 內建語音辨識，在本機執行、不連網。")
+                note("打一半的字會先送出，講的話接在後面。Esc 取消。使用 Mac 內建語音辨識，在本機執行、不連網。智慧輸入有開的話，講完會再由本機模型去贅字、補標點。")
             }
         }
         .formStyle(.grouped)

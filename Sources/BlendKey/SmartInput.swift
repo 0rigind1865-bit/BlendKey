@@ -14,7 +14,10 @@ enum SmartInput {
     private static var process: Process?
 
     /// 補句與校正各自一條請求線：新請求只取消同一種的舊請求
-    enum Kind { case completion, correction }
+    enum Kind {
+        case completion, correction, polish
+        var label: String { self == .completion ? "補句" : self == .correction ? "校正" : "語音整理" }
+    }
     private static var pending: [Kind: DispatchWorkItem] = [:]
     private static var tasks: [Kind: URLSessionDataTask] = [:]
 
@@ -87,6 +90,7 @@ enum SmartInput {
         idleStop = nil
         cancel(.completion)
         cancel(.correction)
+        cancel(.polish)
         guard let running = process else { return }
         running.terminate()
         process = nil
@@ -128,17 +132,36 @@ enum SmartInput {
         }
     }
 
+    /// 語音整理：講完的逐字稿交給模型去掉「嗯、那個」等贅字與重複、補標點（像 Typeless）。
+    /// completion 一定在主執行緒回呼：伺服器沒開、失敗、逾時、或改得離譜（長度差太多）都回傳原文。
+    static func polish(text: String, completion: @escaping (String) -> Void) {
+        guard isRunning, !text.isEmpty else { return completion(text) }
+        schedule(.polish, after: 0, body: [
+            "prompt": polishFewShot + "口語：\(text)\n整理：",
+            "n_predict": text.count * 2 + 8,
+            "stop": ["\n"],
+        ], failed: { completion(text) }) { content in
+            // ponytail: 長度差超過一半當作模型亂寫，退回原文；之後嫌太嚴再調
+            let ok = !content.isEmpty && content.count * 2 >= text.count && content.count <= text.count * 3 / 2 + 2
+            Log.general.info("語音整理：「\(text, privacy: .public)」→「\(content, privacy: .public)」\(ok ? "" : "（退回原文）", privacy: .public)")
+            completion(ok ? content : text)
+        }
+    }
+
     private static func schedule(
-        _ kind: Kind, after delay: TimeInterval, body: [String: Any], handle: @escaping (String) -> Void
+        _ kind: Kind, after delay: TimeInterval, body: [String: Any],
+        failed: (() -> Void)? = nil, handle: @escaping (String) -> Void
     ) {
         cancel(kind)
         guard isRunning else { return }
-        let work = DispatchWorkItem { send(kind, body: body, handle: handle) }
+        let work = DispatchWorkItem { send(kind, body: body, failed: failed, handle: handle) }
         pending[kind] = work
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
-    private static func send(_ kind: Kind, body: [String: Any], handle: @escaping (String) -> Void) {
+    private static func send(
+        _ kind: Kind, body: [String: Any], failed: (() -> Void)? = nil, handle: @escaping (String) -> Void
+    ) {
         var body = body
         body["temperature"] = 0
         body["cache_prompt"] = true  // 校正的範例、補句的上文常重複，伺服器會快取
@@ -152,16 +175,32 @@ enum SmartInput {
             guard error == nil, let data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let content = (json["content"] as? String)?.trimmingCharacters(in: .whitespaces)
-            else { return }
+            else { return DispatchQueue.main.async { failed?() } }
             DispatchQueue.main.async {
                 let elapsed = Int(Date().timeIntervalSince(started) * 1000)
-                Log.general.info("智慧輸入（\(kind == .completion ? "補句" : "校正", privacy: .public)）：\(elapsed, privacy: .public) ms")
+                Log.general.info("智慧輸入（\(kind.label, privacy: .public)）：\(elapsed, privacy: .public) ms")
                 handle(content)
             }
         }
         tasks[kind] = task
         task.resume()
     }
+
+    /// 語音整理的範例：只去贅字、補標點，不改意思
+    private static let polishFewShot = """
+    以下是口語逐字稿和整理後的文字。整理時去掉「嗯、那個、就是、然後」等贅字與重複的話，補上標點，意思和用字不變。
+
+    口語：嗯那個我明天早上大概十點左右到然後我們再討論一下
+    整理：我明天早上大概十點左右到，我們再討論一下。
+
+    口語：這個這個案子的燈光就是要再加兩支側光喔
+    整理：這個案子的燈光要再加兩支側光。
+
+    口語：好的，謝謝你。
+    整理：好的，謝謝你。
+
+
+    """
 
     /// 續寫型模型照範例格式改錯字（實驗 G：錯的 10 句修好 4 句、改壞 0 句）
     private static let fewShot = """
