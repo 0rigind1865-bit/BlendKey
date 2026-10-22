@@ -72,6 +72,76 @@ for p in rows("BPMFBase.txt"):
     weighted = counts.get(ch, 0) * reading_factor(ch, syl)
     entries[key] = max(entries.get(key, 0), weighted)
 
+# 「一」「不」變調讀音（教育部《國語辭典簡編本》規則）：小麥詞庫多半只收一種讀音
+# （「不是」只有 ㄅㄨˊ-ㄕˋ），打本調 ㄅㄨˋ-ㄕˋ 就組不出詞。兩種合規讀音都補上，分數同原詞。
+# 規則：一／不在去聲前變 ㄧˊ／ㄅㄨˊ；一在陰平、陽平、上聲前變 ㄧˋ；數詞序詞（第一、一月、十一）、
+# 詞尾、疊字動詞中間（看一看）的「一」只讀本調。
+# ponytail: 專名與序詞（一女中、鈴木一朗）沒另列排除表，會多生出沒人打的讀音，無害只佔空間。
+NUMERALS = set("零〇一二三四五六七八九十百千萬億兆兩廿卅佰仟")
+
+
+def tone(syl):
+    return {"ˊ": 2, "ˇ": 3, "ˋ": 4, "˙": 5}.get(syl[-1], 1)
+
+
+def next_tone(word, syls, i):
+    """下一字的本調：「不」算去聲、「一」算陰平、輕聲的「個」算去聲。"""
+    nxt = word[i + 1]
+    if nxt == "不":
+        return 4
+    if nxt == "一":
+        return 1
+    t = tone(syls[i + 1])
+    return 4 if t == 5 and nxt == "個" else t
+
+
+def yi_keeps_base(word, i):
+    if i + 1 >= len(word):
+        return True
+    prev, nxt = (word[i - 1] if i else None), word[i + 1]
+    return prev == "第" or prev in NUMERALS or nxt in NUMERALS or nxt == "月" or prev == nxt
+
+
+def other_reading(word, syls, i):
+    ch, s = word[i], syls[i]
+    if ch == "一":
+        if s in ("ㄧˊ", "ㄧˋ"):
+            return "ㄧ"
+        if s == "ㄧ" and not yi_keeps_base(word, i):
+            t = next_tone(word, syls, i)
+            return "ㄧˊ" if t == 4 else "ㄧˋ" if t in (1, 2, 3) else None
+    elif ch == "不":
+        if s == "ㄅㄨˊ":
+            return "ㄅㄨˋ"
+        if s == "ㄅㄨˋ" and i + 1 < len(word) and next_tone(word, syls, i) == 4:
+            return "ㄅㄨˊ"
+    return None
+
+
+def sandhi_variants(word, syls):
+    """三種變體：全部改本調；本調的「一」改變調；本調的「不」改變調。"""
+    def apply(want):
+        out = [other_reading(word, syls, i) or s if want(ch, s) else s for i, (ch, s) in enumerate(zip(word, syls))]
+        return out if out != syls else None
+    return [
+        apply(lambda ch, s: (ch == "一" and s != "ㄧ") or (ch == "不" and s == "ㄅㄨˊ")),
+        apply(lambda ch, s: ch == "一" and s == "ㄧ"),
+        apply(lambda ch, s: ch == "不" and s == "ㄅㄨˋ"),
+    ]
+
+
+added = 0
+for (reading, word), c in list(entries.items()):
+    if len(word) < 2 or not ("一" in word or "不" in word):
+        continue
+    syls = reading.split("-")
+    if len(syls) != len(word):
+        continue
+    for variant in sandhi_variants(word, syls):
+        if variant and entries.setdefault(("-".join(variant), word), c) == c:
+            added += 1
+print(f"變調讀音：補 {added:,} 條")
+
 total = sum(counts.values()) or 1
 
 
