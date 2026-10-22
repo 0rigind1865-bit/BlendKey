@@ -42,9 +42,50 @@ private let 偵測器 = EnglishDetector(words: ["google", "hello", "OK"])
     for key in "google" { _ = engine.handle(.character(key)) }
     #expect(engine.englishHint == "google")
     #expect(engine.englishHintView()?.items.first?.value == "google")
-    _ = engine.handle(.tab)
-    #expect(engine.preedit().text == "google")
-    #expect(engine.handle(.enter).commitText == "google")
+    // 純英文按 Tab：送出並把 Tab 還給 app（終端機補完照常能用）
+    #expect(engine.handle(.tab) == InputEngine.Output(handled: false, commitText: "google"))
+    #expect(engine.isIdle)
+}
+
+@Test func 前面有中文時Tab只收英文不送出() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    engine.englishDetector = 偵測器
+    for key in "su3google" { _ = engine.handle(.character(key)) }
+    #expect(engine.handle(.tab) == .consumed)
+    #expect(engine.handle(.enter).commitText == "你 google")
+}
+
+@Test func 英文接續段按Tab送出並還給程式() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    _ = engine.handle(.englishLiteral("G"))
+    for key in "it" { _ = engine.handle(.character(key)) }
+    #expect(engine.handle(.tab) == InputEngine.Output(handled: false, commitText: "Git"))
+}
+
+// MARK: - 黏在英數上的符號
+
+@Test func 英文後的底線撇號半形直出並接續() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    engine.englishDetector = 偵測器
+    for key in "hello_world" { _ = engine.handle(.character(key)) }
+    #expect(engine.handle(.enter).commitText == "hello_world")
+    let engine2 = InputEngine(lexicon: 測試詞庫)
+    engine2.englishDetector = 偵測器
+    for key in "hello'" { _ = engine2.handle(.character(key)) }
+    #expect(engine2.handle(.enter).commitText == "hello'")
+}
+
+@Test func 數字後的冒號半形直出() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    for key in "10:30" { _ = engine.handle(.character(key)) }
+    #expect(engine.handle(.enter).commitText == "10:30")
+}
+
+@Test func 英文後的問號仍全形() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    engine.englishDetector = 偵測器
+    for key in "google?" { _ = engine.handle(.character(key)) }
+    #expect(engine.handle(.enter).commitText == "google？")
 }
 
 @Test func 注音打字不誤觸英文提示() {
@@ -60,8 +101,7 @@ private let 偵測器 = EnglishDetector(words: ["google", "hello", "OK"])
     engine.englishDetector = 偵測器
     for key in "vercel" { _ = engine.handle(.character(key)) }
     #expect(engine.englishHint == "vercel")
-    _ = engine.handle(.tab)
-    #expect(engine.handle(.enter).commitText == "vercel")
+    #expect(engine.handle(.tab).commitText == "vercel")
 }
 
 @Test func 單次覆寫的打錯字不誤觸() {
@@ -329,6 +369,15 @@ private func run(_ detector: inout ShiftTapDetector, _ events: [(ShiftTapDetecto
     for key in "283" { _ = engine.handle(.character(key)) }
     #expect(engine.preedit().text == "打")
     #expect(engine.handle(.enter).commitText == "打")
+}
+
+@Test func 組不成字的數字Enter直出() {
+    let engine = InputEngine(lexicon: 測試詞庫)
+    for key in "1.62" { _ = engine.handle(.character(key)) }  // ㄅㄡˊ＋半個ㄉ
+    #expect(engine.handle(.enter).commitText == "1.62")
+    let engine2 = InputEngine(lexicon: 測試詞庫)
+    _ = engine2.handle(.character("1"))  // 只有 ㄅ
+    #expect(engine2.handle(.enter).commitText == "1")
 }
 
 @Test func 數字只有Tab才選() {

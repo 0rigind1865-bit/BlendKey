@@ -331,8 +331,10 @@ public final class InputEngine {
             if let hint = englishHint {
                 composer.clear()
                 insertLiteral(hint)
-                return .consumed
             }
+            // 組字區只有英文（前面沒中文）：送出並把 Tab 還給 app——
+            // 終端機的自動補完、Claude Code 的 / 指令照常能用。前面有中文時 Tab 只收字，不送
+            if isPureLiteral { return Output(handled: false, commitText: flush()) }
             return isIdle ? .ignored : .consumed
         case .arrowUp, .pageUp, .pageDown:
             return isIdle ? .ignored : .consumed
@@ -621,8 +623,12 @@ public final class InputEngine {
                 if !numericRaw.isEmpty { numericElements += 1 }
                 return .consumed
             }
+            if !composer.isEmpty {
+                if let output = acceptHintThenSymbol(ch) { return output }
+                cancelNumericRun()
+                return .consumed  // 打錯鍵不打斷組字
+            }
             cancelNumericRun()
-            if !composer.isEmpty { return .consumed }  // 打錯鍵不打斷組字
             if ch == "`" { openSymbolSheet(); return .consumed }
             if fullWidthPunctuation, let punct = Punctuation.fullWidth(ch) {
                 if elements.isEmpty { return Output(handled: true, commitText: punct) }
@@ -633,6 +639,38 @@ public final class InputEngine {
             // 組字區有內容時打到非注音鍵：先上屏，再讓按鍵原樣送給應用程式
             return Output(handled: false, commitText: flush())
         }
+    }
+
+    /// 黏在英文／數字後面的符號（snake_case、I'll、10:30、a@b）：半形直出、之後的字母原樣接續；
+    /// 句末標點與括號（google? → google？）則照常全形
+    private static let stickySymbols: Set<Character> = ["_", "'", ":", "@", "#", "$", "%", "^", "&", "*", "=", "+", "~", "|", "\\"]
+
+    /// 組字中偵測到英文／數字時打到符號鍵：先把提示收成文字，再處理符號。非提示狀態回 nil
+    private func acceptHintThenSymbol(_ ch: Character) -> Output? {
+        guard Self.stickySymbols.contains(ch) || Punctuation.fullWidth(ch) != nil else { return nil }
+        if numberHint != nil {
+            acceptNumber()
+        } else if let hint = englishHint {
+            composer.clear()
+            insertLiteral(hint)
+        } else {
+            return nil
+        }
+        if Self.stickySymbols.contains(ch) {
+            insertLiteral(String(ch))
+            isInLiteralRun = true
+            return .consumed
+        }
+        if fullWidthPunctuation, let punct = Punctuation.fullWidth(ch) {
+            insertLiteral(punct)
+            return .consumed
+        }
+        return Output(handled: false, commitText: flush())
+    }
+
+    /// 組字區只有英文／數字直出的文字（沒有任何注音）
+    private var isPureLiteral: Bool {
+        composer.isEmpty && !elements.isEmpty && elements.allSatisfy { if case .literal = $0 { return true } else { return false } }
     }
 
     /// 打完英文或數字沒按 Tab 就接著打注音：鍵全混進同一個音節（push＋上＝ㄕㄧㄤˋ、150＋個＝ㄍㄜˋ，
@@ -1045,10 +1083,18 @@ public final class InputEngine {
     }
 
     private func flushOutput() -> Output {
-        // 這裡刻意不碰數字提示：「打」＝2ㄉ8ㄚ3ˇ 整串都是數字鍵，
-        // Enter 若自動選數字就會把打好的中文換成 283。要數字請按 Tab。
+        // 數字鍵串組不成中文（1.62＝ㄅㄡˊ＋半個ㄉ）：Enter 直接出數字。
+        // 組得成的維持中文——「打」＝2ㄉ8ㄚ3ˇ 整串都是數字鍵，不能變 283；要數字請按 Tab。
+        if numberHint != nil, numericRunIsNotChinese { acceptNumber() }
         guard let text = flush() else { return .ignored }
         return Output(handled: true, commitText: text)
+    }
+
+    /// 數字串期間組出的東西有沒有不成字的：半個音節，或詞庫查不到的讀音（顯示成注音符號）
+    private var numericRunIsNotChinese: Bool {
+        if !composer.isEmpty { return true }
+        let start = cursor - min(numericElements, cursor)
+        return walked.contains { $0.start >= start && $0.end <= cursor && $0.reading != nil && $0.value == $0.reading }
     }
 
     private func committedText() -> String {
