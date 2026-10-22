@@ -12,6 +12,23 @@ public final class UserPhraseStore {
         var words: [String: [String: Int]] = [:]         // 已升格的使用者詞
         var transitions: [String: [String: Int]] = [:]   // 前詞 → 後詞 → 次數（連續文本語料）
         var contextSelections: [String: [String: Int]] = [:]  // 「前詞→讀音」 → 字 → 次數（單字選字只記這裡）
+
+        init() {}
+
+        /// 手寫解碼：舊版檔案缺的欄位當空的，不要整份解碼失敗（自動產生的 Codable 不吃預設值）
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            // 一個認得的欄位都沒有＝第一版格式（讀音當 key），交給 legacy 解碼
+            guard !c.allKeys.isEmpty else {
+                throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "不是新版格式"))
+            }
+            selections = try c.decodeIfPresent(Table.self, forKey: .selections) ?? [:]
+            pendingWords = try c.decodeIfPresent(Table.self, forKey: .pendingWords) ?? [:]
+            words = try c.decodeIfPresent(Table.self, forKey: .words) ?? [:]
+            transitions = try c.decodeIfPresent(Table.self, forKey: .transitions) ?? [:]
+            contextSelections = try c.decodeIfPresent(Table.self, forKey: .contextSelections) ?? [:]
+        }
+        private typealias Table = [String: [String: Int]]
     }
 
     private var data = StoredData()
@@ -31,6 +48,11 @@ public final class UserPhraseStore {
             data = stored
         } else if let legacy = try? JSONDecoder().decode([String: [String: Int]].self, from: raw) {
             data.selections = legacy  // 第一版格式只有選字權重
+        } else {
+            // 看不懂的檔案先改名留底，免得下次存檔用空資料蓋掉
+            let backup = fileURL.appendingPathExtension("bak")
+            try? FileManager.default.removeItem(at: backup)
+            try? FileManager.default.moveItem(at: fileURL, to: backup)
         }
     }
 

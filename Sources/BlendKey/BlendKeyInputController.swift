@@ -29,6 +29,9 @@ class BlendKeyInputController: IMKInputController {
     )
 
     private var engine: InputEngine?
+    /// 語音整理中的原文（id 防止舊的整理結果晚到時套錯）；整理好前使用者又打字就先上屏原文
+    private var polishing: (id: Int, text: String)?
+    private var polishCounter = 0
     /// 上次問 AI 的組字內容：同樣內容不重問（被過濾掉時也不會一直重試）
     private static var lastCompletionRequest: String?
     /// 上次送去校正的組字內容：同樣內容不重問
@@ -105,8 +108,9 @@ class BlendKeyInputController: IMKInputController {
     override func commitComposition(_ sender: Any!) {
         guard let client = sender as? IMKTextInput else { return }
         if VoiceInput.shared.isListening {
-            endVoice(VoiceInput.shared.finishNow(), client: client)
+            endVoice(VoiceInput.shared.finishNow(), client: client, polish: false)
         }
+        settlePolish(client)
         guard let engine else { return }
         if let text = engine.flush() {
             client.insertText(text, replacementRange: kNoRange)
@@ -124,6 +128,7 @@ class BlendKeyInputController: IMKInputController {
         guard event.type == .keyDown else { return false }
         Self.shiftDetector.noteKeyDown()
         Self.optionDetector.noteKeyDown()
+        settlePolish(client)
 
         // 語音輸入中按任何鍵：先把聽到的字上屏。Esc＝不要了；Enter＝只上屏；其他鍵照常處理
         if VoiceInput.shared.isListening {
@@ -136,7 +141,7 @@ class BlendKeyInputController: IMKInputController {
                 endVoice(heard, client: client)
                 return true
             default:
-                endVoice(heard, client: client)
+                endVoice(heard, client: client, polish: false)  // 接著要打字：原文直接上屏，不等整理
             }
         }
 
@@ -249,7 +254,7 @@ class BlendKeyInputController: IMKInputController {
         guard contentMatches ?? anchorMatches else {
             let anchorText = Self.passthroughAnchor.map(String.init) ?? "無"
             let detail = "游標 \(selection.location)、需 \(length) 字、起點 \(anchorText)、內容 \(content ?? "讀不到")"
-            Log.general.error("反向偵測：切回中文但無法收回字母（\(detail, privacy: .public)）")
+            Log.general.error("反向偵測：切回中文但無法收回字母（\(detail, privacy: .private)）")
             Self.passthroughAnchor = nil
             return false
         }
@@ -355,19 +360,36 @@ class BlendKeyInputController: IMKInputController {
     }
 
     /// 定案：智慧輸入總開關有開就先交給本機模型去贅字、修標點（像 Typeless），再上屏；沒開就直接上屏
-    private func endVoice(_ text: String, client: IMKTextInput) {
+    private func endVoice(_ text: String, client: IMKTextInput, polish: Bool = true) {
         ModeHUD.shared.hide()
         if text.isEmpty {
             client.setMarkedText("", selectionRange: NSRange(location: 0, length: 0), replacementRange: kNoRange)
             return
         }
-        guard UserDefaults.standard.bool(forKey: SettingKey.smartInput), SmartInput.isRunning else {
+        guard polish, UserDefaults.standard.bool(forKey: SettingKey.smartInput), SmartInput.isRunning else {
             return client.insertText(text, replacementRange: kNoRange)
         }
-        // ponytail: 整理中（約 1～3 秒）原文先留在組字區；這時打字會先插入整理結果，再調
-        SmartInput.polish(text: text) { polished in
+        // 整理中（約 1～3 秒）原文留在組字區；這時打字或切走，settlePolish 會先上屏原文、丟掉晚到的結果
+        polishCounter += 1
+        let id = polishCounter
+        polishing = (id, text)
+        client.setMarkedText(
+            NSAttributedString(string: text, attributes: [.underlineStyle: NSUnderlineStyle.single.rawValue]),
+            selectionRange: NSRange(location: text.utf16.count, length: 0),
+            replacementRange: kNoRange
+        )
+        SmartInput.polish(text: text) { [weak self] polished in
+            guard let self, self.polishing?.id == id else { return }
+            self.polishing = nil
             client.insertText(polished, replacementRange: self.kNoRange)
         }
+    }
+
+    /// 語音整理還沒回來：原文直接上屏，之後的整理結果不理
+    private func settlePolish(_ client: IMKTextInput) {
+        guard let pending = polishing else { return }
+        polishing = nil
+        client.insertText(pending.text, replacementRange: kNoRange)
     }
 
     private func caretLineRect(_ client: IMKTextInput) -> NSRect {

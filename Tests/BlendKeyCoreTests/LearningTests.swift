@@ -248,3 +248,26 @@ private func 打擬界並上屏(_ store: UserPhraseStore) -> String? {
     #expect(store.transitionBonus(from: "是", to: "妳") == 0)
     #expect(InputEngine(lexicon: 測試詞庫).handle(.shiftBackspace) == .ignored)  // 閒置時放行給 app
 }
+
+@Test func 舊版學習檔缺欄位_照樣讀得進來() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let url = dir.appendingPathComponent("userphrases.json")
+    // 沒有 contextSelections 等新欄位的舊檔
+    try Data(#"{"selections":{"ㄋㄧˇ":{"妳":3}},"transitions":{"我":{"是":2}}}"#.utf8).write(to: url)
+    let store = UserPhraseStore(fileURL: url)
+    #expect(store.bonus(reading: "ㄋㄧˇ", value: "妳") > 0)
+    #expect(store.transitionCount == 1)
+}
+
+@Test func 學習檔壞掉_先留底不覆寫() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let url = dir.appendingPathComponent("userphrases.json")
+    try Data("{壞掉".utf8).write(to: url)
+    let store = UserPhraseStore(fileURL: url)
+    store.flush()
+    #expect(try Data(contentsOf: url.appendingPathExtension("bak")) == Data("{壞掉".utf8))
+}

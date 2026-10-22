@@ -90,7 +90,7 @@ enum SmartInput {
         idleStop = nil
         cancel(.completion)
         cancel(.correction)
-        cancel(.polish)
+        // 不取消語音整理：伺服器關掉後請求會失敗，走 failed 退回原文，講的話才不會不見
         guard let running = process else { return }
         running.terminate()
         process = nil
@@ -112,7 +112,7 @@ enum SmartInput {
             "stop": ["\n", "。", "！", "？"],
         ]) { content in
             let cleaned = CompletionFilter.clean(content, text: text, before: before)
-            Log.general.info("AI 補句：「\(text, privacy: .public)」→「\(content, privacy: .public)」\(cleaned == nil ? "（過濾掉）" : "", privacy: .public)")
+            Log.general.info("AI 補句：「\(text, privacy: .private)」→「\(content, privacy: .private)」\(cleaned == nil ? "（過濾掉）" : "", privacy: .public)")
             cleaned.map(completion)
         }
     }
@@ -126,8 +126,7 @@ enum SmartInput {
             "n_predict": text.count * 3 + 4,
             "grammar": grammar,
         ]) { content in
-            // ponytail: 除錯期間把內容記到系統紀錄（只在本機），確定穩定後改回 .private
-            Log.general.info("AI 校正：送「\(text, privacy: .public)」→ 回「\(content, privacy: .public)」")
+            Log.general.info("AI 校正：送「\(text, privacy: .private)」→ 回「\(content, privacy: .private)」")
             completion(content)
         }
     }
@@ -143,7 +142,7 @@ enum SmartInput {
         ], failed: { completion(text) }) { content in
             // ponytail: 長度差超過一半當作模型亂寫，退回原文；之後嫌太嚴再調
             let ok = !content.isEmpty && content.count * 2 >= text.count && content.count <= text.count * 3 / 2 + 2
-            Log.general.info("語音整理：「\(text, privacy: .public)」→「\(content, privacy: .public)」\(ok ? "" : "（退回原文）", privacy: .public)")
+            Log.general.info("語音整理：「\(text, privacy: .private)」→「\(content, privacy: .private)」\(ok ? "" : "（退回原文）", privacy: .public)")
             completion(ok ? content : text)
         }
     }
