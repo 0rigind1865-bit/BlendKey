@@ -66,56 +66,68 @@ private struct SettingsView: View {
         SmartInput.setEnabled(smartInput && (aiCompletion || smartCorrection))
     }
 
-    var body: some View {
+    private func note(_ text: String) -> some View {
+        Text(text).font(.callout).foregroundStyle(.secondary)
+    }
+
+    private var inputTab: some View {
         Form {
             Section("中英混輸") {
                 Toggle("Shift 單擊切換中／英", isOn: $shiftToggle)
                 Toggle("中英自動偵測（中打英 Tab 上字；英打注音自動切回）", isOn: $englishHint)
                 Toggle("中英之間自動加空白（我愛 mac）", isOn: $autoSpacing)
-                Text("Shift＋字母永遠直接輸出英文字母。")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                note("Shift＋字母永遠直接輸出英文字母。")
             }
             Section("中文輸入") {
                 Toggle("全形標點（，。？！…）", isOn: $fullWidthPunctuation)
                 Toggle("相似音修正（ㄓㄗ、ㄕㄙ、ㄣㄥ 打錯也找得到）", isOn: $fuzzyReading)
-                Text("開啟後正確讀音仍排最前面，相似音只在後面遞補。")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                Toggle("聯想詞（打字時提示你常接的下一個詞，Tab＋數字選）", isOn: $associations)
-
+                Toggle("聯想詞（打字時提示常接的下一個詞，Tab＋數字選）", isOn: $associations)
                 Picker("候選字窗每頁字數", selection: $pageSize) {
                     Text("7").tag(7)
                     Text("9").tag(9)
                 }
                 .pickerStyle(.segmented)
             }
+            Section {
+                note("設定即時生效。詞庫：小麥注音（MIT）；英文詞表：macOS 內建。")
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private var voiceTab: some View {
+        Form {
             Section("語音輸入") {
                 Toggle("單按右 Option 開始講話，再按一下結束", isOn: $voiceInput)
-                Text("打一半的字會先送出，講的話接在後面。Esc 取消。使用 Mac 內建語音辨識，在本機執行、不連網。")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                note("打一半的字會先送出，講的話接在後面。Esc 取消。使用 Mac 內建語音辨識，在本機執行、不連網。")
             }
+        }
+        .formStyle(.grouped)
+    }
+
+    private var smartTab: some View {
+        Form {
             Section("智慧輸入（實驗）") {
                 Toggle("啟用智慧輸入（本機 AI）", isOn: $smartInput)
                     .disabled(!smartInputReady)
                     .onChange(of: smartInput) { _, _ in syncSmartInput() }
-                Text(smartInputNote)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                Group {
-                    Toggle("AI 補句（提示列最前面 ✨，按 → 接受）", isOn: $aiCompletion)
-                        .onChange(of: aiCompletion) { _, _ in syncSmartInput() }
-                    Toggle("AI 校正（停手時自動改掉組字區的同音錯字）", isOn: $smartCorrection)
-                        .onChange(of: smartCorrection) { _, _ in syncSmartInput() }
-                }
-                .padding(.leading, 16)
-                .disabled(!smartInput || !smartInputReady)
+                note(smartInputNote)
             }
+            Section("功能") {
+                Toggle("AI 補句（提示列最前面 ✨，按 → 接受）", isOn: $aiCompletion)
+                    .onChange(of: aiCompletion) { _, _ in syncSmartInput() }
+                Toggle("AI 校正（停手時自動改掉組字區的同音錯字）", isOn: $smartCorrection)
+                    .onChange(of: smartCorrection) { _, _ in syncSmartInput() }
+            }
+            .disabled(!smartInput || !smartInputReady)
+        }
+        .formStyle(.grouped)
+    }
+
+    private var learningTab: some View {
+        Form {
             Section("學習資料") {
-                Text("融鍵會記住你選過的字、自動學成新詞，並記錄詞與詞的接續習慣，讓斷詞越用越準。資料只存在本機（Application Support），不會離開這台電腦。")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                note("融鍵會記住你選過的字、自動學成新詞，並記錄詞與詞的接續習慣，讓斷詞越用越準。資料只存在本機（Application Support），不會離開這台電腦。")
                 HStack {
                     Button("檢視學習資料…") { onShowLearnedData() }
                     Button("清除全部", role: .destructive) { showingResetAlert = true }
@@ -124,15 +136,19 @@ private struct SettingsView: View {
                     }
                 }
             }
-            Section {
-                Text("設定即時生效。詞庫：小麥注音（MIT）；英文詞表：macOS 內建。")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
         }
         .formStyle(.grouped)
-        .frame(width: 380)
-        .fixedSize()
+    }
+
+    /// 分頁（同 macOS 系統設定）：全部擠一頁時視窗太長
+    var body: some View {
+        TabView {
+            inputTab.tabItem { Label("輸入", systemImage: "keyboard") }
+            voiceTab.tabItem { Label("語音", systemImage: "mic") }
+            smartTab.tabItem { Label("智慧輸入", systemImage: "sparkles") }
+            learningTab.tabItem { Label("學習資料", systemImage: "books.vertical") }
+        }
+        .frame(width: 440, height: 430)
         .alert("清除全部學習資料？", isPresented: $showingResetAlert) {
             Button("取消", role: .cancel) {}
             Button("清除", role: .destructive) {
