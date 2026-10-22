@@ -10,7 +10,7 @@ enum SettingKey {
     static let pageSize = "pageSize"
     static let fuzzyReading = "fuzzyReading"
     static let associations = "associations"
-    static let smartInput = "smartInput"  // 智慧輸入總開關：打勾才啟動 Breeze
+    static let smartInput = "smartInput"  // 智慧輸入總開關：打勾才啟動本機模型
     static let aiCompletion = "aiCompletion"
     static let smartCorrection = "smartCorrection"
     static let voiceInput = "voiceInput"
@@ -58,10 +58,10 @@ private struct SettingsView: View {
         if !SmartInput.modelExists {
             return "需要模型檔，放在：\(SmartInput.modelURL?.path ?? "")"
         }
-        return "使用開源模型 Breeze（聯發科），在本機執行、不連網。開啟時約佔 4 GB 記憶體，關閉就釋放。"
+        return "使用台灣繁體中文開源模型 Llama-3.2-Taiwan-3B（Built with Llama），在本機執行、不連網。開啟時約佔 2.5 GB 記憶體，3 分鐘沒打字或關閉就釋放。"
     }
 
-    /// 開關一動就立刻啟動／關閉 Breeze（不用等下一次打字）
+    /// 開關一動就立刻啟動／關閉本機模型（不用等下一次打字）
     private func syncSmartInput() {
         SmartInput.setEnabled(smartInput && (aiCompletion || smartCorrection))
     }
@@ -97,7 +97,7 @@ private struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section("智慧輸入（實驗）") {
-                Toggle("啟用智慧輸入（Breeze）", isOn: $smartInput)
+                Toggle("啟用智慧輸入（本機 AI）", isOn: $smartInput)
                     .disabled(!smartInputReady)
                     .onChange(of: smartInput) { _, _ in syncSmartInput() }
                 Text(smartInputNote)
