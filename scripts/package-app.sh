@@ -1,10 +1,15 @@
 #!/bin/bash
 # 打包 BlendKey.app：swift build → 組 .app bundle → 簽章
-# 環境變數：CONFIG=debug|release（預設 release）、CODESIGN_IDENTITY（預設 ad-hoc "-"）
+# 環境變數：CONFIG=debug|release（預設 release）、CODESIGN_IDENTITY
+# 簽章：鑰匙圈裡有自製的「BlendKey」程式碼簽署憑證就用它（麥克風／語音權限重裝後不會再問），
+# 沒有就 ad-hoc（每次重裝 macOS 都當成新 App，權限會重問）
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 CONFIG="${CONFIG:-release}"
+if [ -z "${CODESIGN_IDENTITY:-}" ] && security find-identity -v -p codesigning 2>/dev/null | grep -q '"BlendKey"'; then
+  CODESIGN_IDENTITY="BlendKey"
+fi
 IDENTITY="${CODESIGN_IDENTITY:--}"
 
 swift build -c "$CONFIG" --product BlendKey
