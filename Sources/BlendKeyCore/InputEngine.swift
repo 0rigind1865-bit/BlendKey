@@ -131,6 +131,8 @@ public final class InputEngine {
     public var englishHintEnabled = true
     /// 英文詞偵測器（載妥後注入；nil 時只剩覆寫啟發式）
     public var englishDetector: EnglishDetector?
+    /// 快捷文字本（殼層從檔案載入；空＝沒有）
+    public var shortcuts = Shortcuts()
     /// 游標前已上屏的文字（控制器在組字開始前餵進來；CLI／測試可不設）。
     /// 只留結尾連續的漢字、最多 2 個，遇標點英數就停；只在記憶體、不寫檔
     public var leftContext = "" {
@@ -159,10 +161,14 @@ public final class InputEngine {
                 decoder.transitionBonus = { [weak store] previous, next in
                     store?.transitionBonus(from: previous, to: next) ?? 0
                 }
+                decoder.selectionBonus = { [weak store] previous, reading, value in
+                    store?.selectionBonus(after: previous, reading: reading, value: value) ?? 0
+                }
             } else {
                 decoder.scoreBonus = nil
                 decoder.extraUnigrams = nil
                 decoder.transitionBonus = nil
+                decoder.selectionBonus = nil
             }
             rewalk()
         }
@@ -217,8 +223,10 @@ public final class InputEngine {
     /// 組字中的原始按鍵看起來是英文時，提供 Tab 直接上英文的提示。
     /// 兩個訊號：命中英文詞典，或注音槽位被反覆覆寫（打英文的特徵）。
     public var englishHint: String? {
-        guard englishHintEnabled else { return nil }
         let raw = composer.rawKeys
+        // 快捷文字本的縮寫：不管偵測開不開都認（使用者自己定義的）
+        if raw.count >= 2, shortcuts.expansion(for: raw) != nil { return raw }
+        guard englishHintEnabled else { return nil }
         // 允許字母數字混合（1mm、3D、v2），但至少要有一個字母——純數字歸 numberHint
         guard raw.count >= 3, raw.allSatisfy({ $0.isLetter || $0.isNumber }),
               raw.contains(where: \.isLetter) else { return nil }
@@ -298,6 +306,15 @@ public final class InputEngine {
             if !composer.isEmpty { composer.clear(); return .consumed }
             if !elements.isEmpty { reset(); return .consumed }
             return .ignored
+        case .shiftBackspace:
+            // 「這個字選錯了」：忘掉游標左邊那個詞的學習（前文選字、全域選字、自造詞、詞對），拆掉 pin 重算
+            guard composer.isEmpty, let segment = anchorSegment(), let reading = segment.reading else {
+                return isIdle ? .ignored : .consumed
+            }
+            userPhrases?.forget(reading: reading, value: segment.value, after: previousWord(before: segment.start))
+            pins.removeAll { $0.start < segment.end && segment.start < $0.end }
+            rewalk()
+            return .consumed
         case .backspace:
             if !composer.isEmpty {
                 _ = composer.backspace()
@@ -768,6 +785,9 @@ public final class InputEngine {
         case .backspace:
             sheet = nil
             return current.kind == .symbols ? .consumed : nil  // 符號表退格只收窗
+        case .shiftBackspace:
+            sheet = nil
+            return nil
         case .englishLiteral:
             sheet = nil
             return nil
@@ -906,6 +926,7 @@ public final class InputEngine {
         guard let raw = englishHint else { return }
         var choices: [BilingualChoice] = []
         var seen = Set<String>()
+        if let expansion = shortcuts.expansion(for: raw) { choices.append(.english(expansion)) }  // 快捷文字排第一
         for variant in [raw, raw.prefix(1).uppercased() + raw.dropFirst(), raw.uppercased()]
         where seen.insert(variant).inserted {
             choices.append(.english(variant))
@@ -989,7 +1010,7 @@ public final class InputEngine {
             )
             return
         }
-        var all = decoder.candidateSegments(elements, start: anchor.start)
+        var all = decoder.candidateSegments(elements, start: anchor.start, after: previousWord(before: anchor.start))
         guard !all.isEmpty else { return }
         let highlighted = all.firstIndex { $0.value == anchor.value && $0.length == anchor.length } ?? 0
         // 今天、現在…：日期時間寫法緊接在目前的詞後面，第一頁就看得到
@@ -1030,11 +1051,16 @@ public final class InputEngine {
         pins.removeAll { $0.start < segment.end && segment.start < $0.end }
         pins.append(segment)
         if let reading = segment.reading, !DateMacro.forms(for: reading).contains(segment.value) {
-            userPhrases?.bump(reading: reading, value: segment.value)
+            userPhrases?.bump(reading: reading, value: segment.value, after: previousWord(before: segment.start))
         }
         rewalk()
         cursor = min(segment.end + 1, elements.count)  // 指向下一個字（游標＝其右邊）
         sheet = nil
+    }
+
+    /// 這個位置前面那個詞：組字區裡的前一段；在句首就用游標前已上屏的前文（沒有就 "^"）
+    private func previousWord(before start: Int) -> String {
+        walked.first { $0.end == start }?.value ?? decoder.startKey
     }
 
     // MARK: - 元素操作
@@ -1106,6 +1132,11 @@ public final class InputEngine {
         // 數字鍵串組不成中文（1.62＝ㄅㄡˊ＋半個ㄉ）：Enter 直接出數字。
         // 組得成的維持中文——「打」＝2ㄉ8ㄚ3ˇ 整串都是數字鍵，不能變 283；要數字請按 Tab。
         if numberHint != nil, numericRunIsNotChinese { acceptNumber() }
+        // 快捷文字本的縮寫：Enter 送出展開內容（要縮寫本身請按 Tab）
+        if let raw = englishHint, let expansion = shortcuts.expansion(for: raw) {
+            composer.clear()
+            insertLiteral(expansion)
+        }
         guard let text = flush() else { return .ignored }
         return Output(handled: true, commitText: text)
     }

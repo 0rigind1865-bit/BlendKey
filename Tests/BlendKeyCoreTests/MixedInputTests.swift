@@ -629,3 +629,31 @@ private func run(_ detector: inout ShiftTapDetector, _ events: [(ShiftTapDetecto
     for key in "150g4" { _ = engine.handle(.character(key)) }  // 150＋ㄕˋ，ㄕ 會蓋掉 ㄓ
     #expect(engine.handle(.enter).commitText == "150 是")
 }
+
+// MARK: - 快捷文字本
+
+@Test func 快捷文字本解析() {
+    let shortcuts = Shortcuts(text: "# 註解\naddr\t台北市信義區\n  tel 02-1234-5678 \n壞行 沒有英文縮寫\nnoexp\n")
+    #expect(shortcuts.expansion(for: "addr") == "台北市信義區")
+    #expect(shortcuts.expansion(for: "TEL") == "02-1234-5678")
+    #expect(shortcuts.expansion(for: "壞行") == nil)
+    #expect(shortcuts.expansion(for: "noexp") == nil)
+    #expect(Shortcuts(text: Shortcuts.template).isEmpty)  // 範例全是註解
+}
+
+@Test func 縮寫按空白展開排第一_Enter直接展開_Tab出縮寫本身() {
+    func make() -> InputEngine {
+        let engine = InputEngine(lexicon: 測試詞庫)
+        engine.shortcuts = Shortcuts(text: "addr 台北市信義區")
+        for key in "addr" { _ = engine.handle(.character(key)) }
+        return engine
+    }
+    let bySpace = make()
+    #expect(bySpace.englishHint == "addr")
+    _ = bySpace.handle(.space)
+    #expect(bySpace.sheetView()?.items.first?.value == "台北市信義區")
+    _ = bySpace.handle(.enter)  // 選反白的第一項
+    #expect(bySpace.handle(.enter).commitText == "台北市信義區")
+    #expect(make().handle(.enter).commitText == "台北市信義區")
+    #expect(make().handle(.tab).commitText == "addr")
+}

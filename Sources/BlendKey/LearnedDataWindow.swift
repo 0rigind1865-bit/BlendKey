@@ -42,7 +42,7 @@ private struct LearnedDataView: View {
                 .frame(maxHeight: .infinity)
             } else {
                 Table(filtered) {
-                    TableColumn(kind == .transition ? "前一個詞" : "讀音") { entry in
+                    TableColumn(kind == .transition ? "前一個詞" : kind == .contextSelection ? "前詞→讀音" : "讀音") { entry in
                         Text(entry.key).font(.system(size: 13))
                     }
                     TableColumn(kind == .transition ? "接著打" : "字詞") { entry in
@@ -86,7 +86,8 @@ private struct LearnedDataView: View {
 
     private var explanation: String {
         switch kind {
-        case .selection: return "你在候選字窗選過的字——選越多次，之後排得越前面。"
+        case .selection: return "你在候選字窗選過的詞——選越多次，之後排得越前面。"
+        case .contextSelection: return "選過的單字連前一個詞一起記（前詞→讀音），只在同樣的前文底下生效。組字中按 Shift＋退格可忘掉。"
         case .word: return "一串注音被你逐字改字後上屏，就自動學成新詞。"
         case .transition: return "從你上屏的句子學到的詞語接續習慣，讓斷詞越用越準。"
         }

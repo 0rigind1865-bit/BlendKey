@@ -60,6 +60,7 @@ class BlendKeyInputController: IMKInputController {
         for (title, action) in [
             ("操作說明…", #selector(showGuide(_:))),
             ("學習資料…", #selector(showLearnedData(_:))),
+            ("快捷文字本…", #selector(editShortcuts(_:))),
             ("偏好設定…", #selector(showPreferences(_:))),
         ] {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
@@ -71,6 +72,10 @@ class BlendKeyInputController: IMKInputController {
 
     @objc private func showGuide(_ sender: Any?) {
         GuideWindowController.shared.show()
+    }
+
+    @objc private func editShortcuts(_ sender: Any?) {
+        ShortcutFile.openInEditor()
     }
 
     @objc private func showLearnedData(_ sender: Any?) {
@@ -287,7 +292,9 @@ class BlendKeyInputController: IMKInputController {
             }
         }
         guard UserDefaults.standard.bool(forKey: SettingKey.shiftToggle) else { return }
-        let isShiftKey = event.keyCode == 56 || event.keyCode == 60  // 左／右 Shift
+        // 左 Shift＝56、右 Shift＝60；「只認右 Shift」是給常誤觸的人（學創音：只用右 Shift 避免誤觸）
+        let rightOnly = UserDefaults.standard.bool(forKey: SettingKey.rightShiftOnly)
+        let isShiftKey = event.keyCode == 60 || (event.keyCode == 56 && !rightOnly)
 
         let flagsEvent: ShiftTapDetector.FlagsEvent
         if isShiftKey && flags == .shift {
@@ -375,7 +382,7 @@ class BlendKeyInputController: IMKInputController {
         switch Int(event.keyCode) {
         case kVK_Return, kVK_ANSI_KeypadEnter: return .enter
         case kVK_Escape: return .escape
-        case kVK_Delete: return .backspace
+        case kVK_Delete: return event.modifierFlags.contains(.shift) ? .shiftBackspace : .backspace
         case kVK_Tab: return .tab
         case kVK_LeftArrow: return .arrowLeft
         case kVK_RightArrow: return .arrowRight
@@ -419,6 +426,7 @@ class BlendKeyInputController: IMKInputController {
         if let engine {
             let defaults = UserDefaults.standard
             engine.englishDetector = LexiconStore.englishDetector
+            engine.shortcuts = ShortcutFile.current()
             engine.englishHintEnabled = defaults.bool(forKey: SettingKey.englishHint)
             engine.fullWidthPunctuation = defaults.bool(forKey: SettingKey.fullWidthPunctuation)
             engine.autoSpacing = defaults.bool(forKey: SettingKey.autoSpacing)

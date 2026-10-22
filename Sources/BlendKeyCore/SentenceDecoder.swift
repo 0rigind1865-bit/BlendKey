@@ -42,6 +42,8 @@ public struct SentenceDecoder {
     /// 游標前已上屏文字的結尾（最多 2 個漢字，由 InputEngine 截好）：第一個詞的詞對加分條件。
     /// 先送出「好」再打 ㄅㄚ˙ 時，第一個詞不再當成句首算，「吧」才贏得過「巴」。空字串＝句首
     public var leftContext = ""
+    /// 帶前文的選字加分（前詞, 讀音, 值）：單字選字只在同樣前文底下生效
+    public var selectionBonus: ((String, String, String) -> Double)?
     /// 每個跨距取幾個候選進詞圖：>1 才讓上下文有選擇餘地
     public var candidateDepth = 4
     /// 相似音（ㄓㄗ、ㄕㄙ、ㄣㄥ…互通）：開啟後打錯也找得到字
@@ -118,7 +120,7 @@ public struct SentenceDecoder {
                 for node in nodes(elements, start: start, end: end, pins: pins) {
                     let base = node.score + nodePenalty
                     if start == 0 {
-                        let score = base + contextBonus(node.segment.value)
+                        let score = base + contextBonus(node.segment.value) + selectionBonus(after: startKey, node.segment)
                         states[end].append(State(segment: node.segment, score: score, prevIndex: -1))
                         continue
                     }
@@ -128,7 +130,7 @@ public struct SentenceDecoder {
                         let bonus = transitionBonus.map {
                             transitionWeight * $0(previous.segment.value, node.segment.value)
                         } ?? 0
-                        let score = previous.score + base + bonus
+                        let score = previous.score + base + bonus + selectionBonus(after: previous.segment.value, node.segment)
                         if score > bestScore {
                             bestScore = score
                             bestPrev = index
@@ -153,6 +155,19 @@ public struct SentenceDecoder {
         return result.reversed()
     }
 
+    /// 句首的前文 key：游標前的漢字，什麼都沒有就 "^"（真正的句首也是一種前文）
+    public var startKey: String { leftContext.isEmpty ? "^" : leftContext }
+
+    /// 前文選字加分：先試整個前詞，再試它的最後 1 字；都沒選過就 0
+    private func selectionBonus(after previous: String, _ segment: DecodedSegment) -> Double {
+        guard let selectionBonus, let reading = segment.reading else { return 0 }
+        for key in [previous, String(previous.suffix(1))] where !key.isEmpty {
+            let bonus = selectionBonus(key, reading, segment.value)
+            if bonus > 0 { return bonus }
+        }
+        return 0
+    }
+
     /// 前文→第一個詞的詞對加分：先試整段前文（2 字），再試最後 1 字；都沒打過就 0
     private func contextBonus(_ next: String) -> Double {
         guard let transitionBonus, !leftContext.isEmpty else { return 0 }
@@ -164,12 +179,15 @@ public struct SentenceDecoder {
     }
 
     /// 候選字窗用：從 start 起所有跨距的候選，長詞在前、同長依分數（含學習加權）
-    public func candidateSegments(_ elements: [Element], start: Int) -> [DecodedSegment] {
+    public func candidateSegments(_ elements: [Element], start: Int, after previous: String = "^") -> [DecodedSegment] {
         var segments: [DecodedSegment] = []
         for length in stride(from: min(elements.count - start, searchSpan), through: 1, by: -1) {
             guard let reading = joinedReading(elements, start: start, end: start + length) else { continue }
-            let ranked = allUnigrams(reading)
-                .sorted { adjusted($0, reading: reading) > adjusted($1, reading: reading) }
+            func score(_ unigram: Unigram) -> Double {
+                let segment = DecodedSegment(start: start, length: length, value: unigram.value, reading: reading)
+                return adjusted(unigram, reading: reading) + selectionBonus(after: previous, segment)
+            }
+            let ranked = allUnigrams(reading).sorted { score($0) > score($1) }
             for unigram in ranked {
                 segments.append(DecodedSegment(start: start, length: length, value: unigram.value, reading: reading))
             }

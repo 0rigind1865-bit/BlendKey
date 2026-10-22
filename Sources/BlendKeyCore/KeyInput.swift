@@ -11,6 +11,8 @@ public enum KeyInput: Equatable, Sendable {
     case enter
     case escape
     case backspace
+    /// Shift＋退格：「這個字我選錯了」——忘掉它的學習
+    case shiftBackspace
     case tab
     case arrowLeft
     case arrowRight

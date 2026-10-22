@@ -11,6 +11,7 @@ public final class UserPhraseStore {
         var pendingWords: [String: [String: Int]] = [:]  // 造詞候補（出現 1 次）
         var words: [String: [String: Int]] = [:]         // 已升格的使用者詞
         var transitions: [String: [String: Int]] = [:]   // 前詞 → 後詞 → 次數（連續文本語料）
+        var contextSelections: [String: [String: Int]] = [:]  // 「前詞→讀音」 → 字 → 次數（單字選字只記這裡）
     }
 
     private var data = StoredData()
@@ -45,6 +46,33 @@ public final class UserPhraseStore {
         guard let weight = data.selections[reading]?[value], weight > 0 else { return 0 }
         return 2.0 * Foundation.log(1.0 + Double(weight))
     }
+
+    /// 帶前文的選字：單字只記在「前詞→讀音」底下（善解實測全域學「我試」會害「我是」全壞——
+    /// 是／試、在／再這類同音單字，前文才分得出來）；多字詞歧義少，照舊記全域。
+    /// `previous` 是組字區裡前一個詞的值；句首用游標前已上屏的前文，什麼都沒有就 "^"。
+    /// ponytail: key 用「→」接，前詞含「→」會混（符號表能打出來）；真撞到再換分隔
+    public func bump(reading: String, value: String, after previous: String) {
+        guard value.count == 1 else { return bump(reading: reading, value: value) }
+        data.contextSelections[Self.contextKey(previous, reading), default: [:]][value, default: 0] += 1
+        save()
+    }
+
+    /// 這個前文底下選過這個字幾次的加分；沒選過回 0
+    public func selectionBonus(after previous: String, reading: String, value: String) -> Double {
+        guard let weight = data.contextSelections[Self.contextKey(previous, reading)]?[value], weight > 0 else { return 0 }
+        return 2.0 * Foundation.log(1.0 + Double(weight))
+    }
+
+    /// Shift＋退格：使用者說這個字選錯了——把它在這個前文與全域的選字紀錄、自造詞、詞對都忘掉
+    public func forget(reading: String, value: String, after previous: String) {
+        data.contextSelections[Self.contextKey(previous, reading)]?[value] = nil
+        data.selections[reading]?[value] = nil
+        data.words[reading]?[value] = nil
+        data.transitions[previous]?[value] = nil
+        save()
+    }
+
+    static func contextKey(_ previous: String, _ reading: String) -> String { previous + "→" + reading }
 
     // MARK: - 自動造詞
 
@@ -111,6 +139,7 @@ public final class UserPhraseStore {
     public struct Entry: Identifiable, Sendable {
         public enum Kind: String, Sendable, CaseIterable {
             case selection = "選字紀錄"
+            case contextSelection = "前文選字"
             case word = "自動造詞"
             case transition = "詞語接續"
         }
@@ -125,6 +154,7 @@ public final class UserPhraseStore {
         let source: [String: [String: Int]]
         switch kind {
         case .selection: source = data.selections
+        case .contextSelection: source = data.contextSelections
         case .word: source = data.words
         case .transition: source = data.transitions
         }
@@ -138,6 +168,7 @@ public final class UserPhraseStore {
     public func remove(_ entry: Entry) {
         switch entry.kind {
         case .selection: data.selections[entry.key]?[entry.value] = nil
+        case .contextSelection: data.contextSelections[entry.key]?[entry.value] = nil
         case .word: data.words[entry.key]?[entry.value] = nil
         case .transition: data.transitions[entry.key]?[entry.value] = nil
         }

@@ -35,13 +35,15 @@ private struct GuideView: View {
         Shortcut(keys: "Shift＋字母", detail: "開始英文段（首字大寫），之後小寫字母原樣接續；再按一下 Shift 回中文，或直接打注音也會自動回中文"),
         Shortcut(keys: "長按字母／數字", detail: "直接輸出那個字元，例如按住 g 出 g、按住 5 出 5"),
         Shortcut(keys: "打數字", detail: "直接打 1.62、1mm、0.4mm 再按 Tab 就會輸出原樣；單一數字打 1 按空白即可"),
-        Shortcut(keys: "Shift 單擊", detail: "整體切換中／英模式，游標旁會閃「中」或「A」"),
+        Shortcut(keys: "Shift 單擊", detail: "整體切換中／英模式，游標旁會閃「中」或「A」（偏好設定可改成只認右 Shift）"),
+        Shortcut(keys: "縮寫＋空白", detail: "快捷文字本：選單「快捷文字本…」編輯，每行「縮寫 空白 全文」；打縮寫按空白，全文排候選第一位，再按空白或 Enter 送出"),
         Shortcut(keys: "Tab", detail: "接受英文偵測提示，直接上英文字"),
     ]
 
     private let smart = [
         Shortcut(keys: "打錯自己會修", detail: "英文模式下誤打注音，或大寫燈亮著打注音，融鍵會自動切回中文並把已打出的字母收回重組"),
         Shortcut(keys: "越用越準", detail: "選過的字、改過的詞、詞語接續習慣都會記住，同一句話打過幾次之後就不用再改"),
+        Shortcut(keys: "Shift＋退格", detail: "組字中按：游標左邊那個字「選錯了」，忘掉它的學習並重新組字"),
         Shortcut(keys: "自動造詞", detail: "一串注音被你逐字改字後上屏，就自動學成新詞"),
     ]
 

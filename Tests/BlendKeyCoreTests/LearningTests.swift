@@ -198,3 +198,53 @@ private func 打擬界並上屏(_ store: UserPhraseStore) -> String? {
     #expect(reloaded.bonus(reading: "ㄋㄧˇ", value: "妳") > 2.0)
     #expect(reloaded.bonus(reading: "ㄋㄧˇ", value: "你") == 0)
 }
+
+// MARK: - 前文選字（單字連前文一起記）
+
+@Test func 單字選字只在同樣前文底下生效() {
+    let store = UserPhraseStore(fileURL: nil)
+    // 前文「是」底下把 ㄋㄧˇ 改成「妳」
+    let first = InputEngine(lexicon: 測試詞庫)
+    first.userPhrases = store
+    first.leftContext = "是"
+    for key in "su3" { _ = first.handle(.character(key)) }
+    _ = first.handle(.arrowDown)
+    選字(first, "妳")
+    _ = first.handle(.enter)
+    #expect(store.selectionBonus(after: "是", reading: "ㄋㄧˇ", value: "妳") > 0)
+    #expect(store.bonus(reading: "ㄋㄧˇ", value: "妳") == 0)  // 單字不記全域
+
+    // 同樣前文：直接是「妳」；沒有前文：仍是預設的「你」（不像全域學習會害到別句）
+    let same = InputEngine(lexicon: 測試詞庫)
+    same.userPhrases = store
+    same.leftContext = "是"
+    for key in "su3" { _ = same.handle(.character(key)) }
+    #expect(same.preedit().text == "妳")
+    let other = InputEngine(lexicon: 測試詞庫)
+    other.userPhrases = store
+    other.leftContext = "我"
+    for key in "su3" { _ = other.handle(.character(key)) }
+    #expect(other.preedit().text == "你")
+}
+
+@Test func Shift退格忘掉選錯的字() {
+    let store = UserPhraseStore(fileURL: nil)
+    let first = InputEngine(lexicon: 測試詞庫)
+    first.userPhrases = store
+    first.leftContext = "是"
+    for key in "su3" { _ = first.handle(.character(key)) }
+    _ = first.handle(.arrowDown)
+    選字(first, "妳")
+    _ = first.handle(.enter)
+
+    let second = InputEngine(lexicon: 測試詞庫)
+    second.userPhrases = store
+    second.leftContext = "是"
+    for key in "su3" { _ = second.handle(.character(key)) }
+    #expect(second.preedit().text == "妳")
+    #expect(second.handle(.shiftBackspace) == .consumed)
+    #expect(second.preedit().text == "你")  // 學習忘掉、重算回預設
+    #expect(store.selectionBonus(after: "是", reading: "ㄋㄧˇ", value: "妳") == 0)
+    #expect(store.transitionBonus(from: "是", to: "妳") == 0)
+    #expect(InputEngine(lexicon: 測試詞庫).handle(.shiftBackspace) == .ignored)  // 閒置時放行給 app
+}

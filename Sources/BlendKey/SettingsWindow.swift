@@ -4,6 +4,7 @@ import SwiftUI
 /// 偏好設定鍵（UserDefaults，@AppStorage 同鍵共用）
 enum SettingKey {
     static let shiftToggle = "shiftToggle"
+    static let rightShiftOnly = "rightShiftOnly"  // 只認右 Shift 單擊（左 Shift 常誤觸）
     static let englishHint = "englishHint"
     static let fullWidthPunctuation = "fullWidthPunctuation"
     static let autoSpacing = "autoSpacing"
@@ -18,6 +19,7 @@ enum SettingKey {
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [
             shiftToggle: true,
+            rightShiftOnly: false,
             englishHint: true,
             fullWidthPunctuation: true,
             autoSpacing: true,
@@ -34,6 +36,7 @@ enum SettingKey {
 
 private struct SettingsView: View {
     @AppStorage(SettingKey.shiftToggle) private var shiftToggle = true
+    @AppStorage(SettingKey.rightShiftOnly) private var rightShiftOnly = false
     @AppStorage(SettingKey.englishHint) private var englishHint = true
     @AppStorage(SettingKey.fullWidthPunctuation) private var fullWidthPunctuation = true
     @AppStorage(SettingKey.autoSpacing) private var autoSpacing = true
@@ -74,6 +77,8 @@ private struct SettingsView: View {
         Form {
             Section("中英混輸") {
                 Toggle("Shift 單擊切換中／英", isOn: $shiftToggle)
+                Toggle("只認右 Shift（左 Shift 常誤觸的話打開）", isOn: $rightShiftOnly)
+                    .disabled(!shiftToggle)
                 Toggle("中英自動偵測（中打英 Tab 上字；英打注音自動切回）", isOn: $englishHint)
                 Toggle("中英之間自動加空白（我愛 mac）", isOn: $autoSpacing)
                 note("Shift＋字母永遠直接輸出英文字母。")
@@ -127,7 +132,7 @@ private struct SettingsView: View {
     private var learningTab: some View {
         Form {
             Section("學習資料") {
-                note("融鍵會記住你選過的字、自動學成新詞，並記錄詞與詞的接續習慣，讓斷詞越用越準。資料只存在本機（Application Support），不會離開這台電腦。")
+                note("融鍵會記住你選過的字（單字連前文一起記，「我試」不會害到「我是」）、自動學成新詞，並記錄詞與詞的接續習慣，讓斷詞越用越準。選錯學壞的字，組字中按 Shift＋退格就忘掉。資料只存在本機（Application Support），不會離開這台電腦。")
                 HStack {
                     Button("檢視學習資料…") { onShowLearnedData() }
                     Button("清除全部", role: .destructive) { showingResetAlert = true }
