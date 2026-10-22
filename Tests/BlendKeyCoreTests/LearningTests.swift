@@ -271,3 +271,13 @@ private func 打擬界並上屏(_ store: UserPhraseStore) -> String? {
     store.flush()
     #expect(try Data(contentsOf: url.appendingPathExtension("bak")) == Data("{壞掉".utf8))
 }
+
+@Test func AI校正改的字不學成使用者詞() {
+    let store = UserPhraseStore(fileURL: nil)
+    let engine = InputEngine(lexicon: 測試詞庫)
+    engine.userPhrases = store
+    for key in "su3su3" { _ = engine.handle(.character(key)) }  // 你你
+    #expect(engine.applyCorrection("妳妳", to: "你你"))        // 兩個相鄰單字都被 AI 改
+    #expect(engine.handle(.enter).commitText == "妳妳")
+    #expect(store.userWords(reading: "ㄋㄧˇ-ㄋㄧˇ").isEmpty)
+}

@@ -657,3 +657,11 @@ private func run(_ detector: inout ShiftTapDetector, _ events: [(ShiftTapDetecto
     #expect(make().handle(.enter).commitText == "台北市信義區")
     #expect(make().handle(.tab).commitText == "addr")
 }
+
+@Test func 數字鍵打的字按空白要開候選_不直接上屏() {
+    // 「打」＝2ㄉ 8ㄚ 3ˇ，全是數字鍵打出來的注音，空白仍是選字不是直出數字
+    let engine = InputEngine(lexicon: 測試詞庫)
+    for key in "283" { _ = engine.handle(.character(key)) }
+    #expect(engine.handle(.space).commitText == nil)
+    #expect(engine.preedit().text == "打")
+}

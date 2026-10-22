@@ -8,7 +8,6 @@ public final class UserPhraseStore {
 
     private struct StoredData: Codable {
         var selections: [String: [String: Int]] = [:]    // 讀音 → 詞 → 選字次數
-        var pendingWords: [String: [String: Int]] = [:]  // 造詞候補（出現 1 次）
         var words: [String: [String: Int]] = [:]         // 已升格的使用者詞
         var transitions: [String: [String: Int]] = [:]   // 前詞 → 後詞 → 次數（連續文本語料）
         var contextSelections: [String: [String: Int]] = [:]  // 「前詞→讀音」 → 字 → 次數（單字選字只記這裡）
@@ -23,7 +22,6 @@ public final class UserPhraseStore {
                 throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "不是新版格式"))
             }
             selections = try c.decodeIfPresent(Table.self, forKey: .selections) ?? [:]
-            pendingWords = try c.decodeIfPresent(Table.self, forKey: .pendingWords) ?? [:]
             words = try c.decodeIfPresent(Table.self, forKey: .words) ?? [:]
             transitions = try c.decodeIfPresent(Table.self, forKey: .transitions) ?? [:]
             contextSelections = try c.decodeIfPresent(Table.self, forKey: .contextSelections) ?? [:]
@@ -35,10 +33,14 @@ public final class UserPhraseStore {
     private let fileURL: URL?
     /// ponytail: 使用者詞固定分數 -8（約當常用詞），穩贏單字拆解路徑；不夠再改動態
     private let userWordScore = -8.0
-    /// 一次就學：守門是「必須有改字」，不是每次上屏都學（善解量過後者會學進三成碎片）
-    private let promotionThreshold = 1
     /// ponytail: 詞對上限 20,000，超過就丟掉只出現一次的；不夠再改 LRU
     private let transitionLimit = 20_000
+
+    /// 預設存放位置（輸入法與學習資料視窗共用）
+    public static var defaultFileURL: URL? {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("BlendKey/userphrases.json")
+    }
 
     /// - Parameter fileURL: nil 表示純記憶體（測試、CLI 用）
     public init(fileURL: URL?) {
@@ -98,20 +100,10 @@ public final class UserPhraseStore {
 
     // MARK: - 自動造詞
 
-    /// 上屏時回報一段「被改字的連續單字串」；達門檻即升格為使用者詞（pendingWords 只為相容舊檔保留）
+    /// 上屏時回報一段「被改字的連續單字串」，一次就升格為使用者詞
+    /// （守門是「必須有改字」，不是每次上屏都學：善解量過後者會學進三成碎片）
     public func noteWordCandidate(reading: String, value: String) {
-        if data.words[reading]?[value] != nil {
-            data.words[reading]![value]! += 1  // 已是使用者詞：記次數即可
-            save()
-            return
-        }
-        let count = (data.pendingWords[reading]?[value] ?? 0) + 1
-        if count >= promotionThreshold {
-            data.pendingWords[reading]?[value] = nil
-            data.words[reading, default: [:]][value] = count
-        } else {
-            data.pendingWords[reading, default: [:]][value] = count
-        }
+        data.words[reading, default: [:]][value, default: 0] += 1
         save()
     }
 

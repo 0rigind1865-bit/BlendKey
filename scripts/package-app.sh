@@ -25,11 +25,10 @@ plutil -lint -s "$APP/Contents/Info.plist"
 cp Resources/BlendKey.tiff "$APP/Contents/Resources/" 2>/dev/null || echo "（尚無圖示，略過）"
 cp -R Resources/zh-Hant.lproj "$APP/Contents/Resources/"
 
-# 詞庫（M1 起由 scripts/build-data.sh 產生）
-if [ -f Resources/data/data.txt ]; then
-  mkdir -p "$APP/Contents/Resources/data"
-  cp Resources/data/data.txt Resources/data/LICENSE-* "$APP/Contents/Resources/data/" 2>/dev/null || true
-fi
+# 詞庫：缺了就停，免得打出一個沒詞庫的 .app
+[ -f Resources/data/data.txt ] || { echo "錯誤：缺 Resources/data/data.txt（先跑 scripts/build-data.sh）" >&2; exit 1; }
+mkdir -p "$APP/Contents/Resources/data"
+cp Resources/data/data.txt Resources/data/LICENSE-* "$APP/Contents/Resources/data/"
 
 codesign --force --options runtime --entitlements Resources/BlendKey.entitlements --sign "$IDENTITY" "$APP"
 echo "完成：$APP"

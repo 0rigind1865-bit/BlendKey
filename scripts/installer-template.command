@@ -32,10 +32,15 @@ if [ -d "$DEST/BlendKey.app" ]; then
   rm -rf "$DEST/BlendKey.app"
 fi
 
-cp -R "BlendKey.app" "$DEST/"
+fail() { echo; echo "❌ $1"; echo "請把這個視窗的內容截圖回報。"; exit 1; }
+
+# 系統層已有同一個輸入法的話，兩份並存會衝突
+[ -d "/Library/Input Methods/BlendKey.app" ] && fail "系統層（/Library/Input Methods）已裝有融鍵，請先移除那份再安裝"
+
+cp -R "BlendKey.app" "$DEST/" || fail "複製失敗"
 echo "・已複製 BlendKey.app"
 
-"$DEST/BlendKey.app/Contents/MacOS/BlendKey" install >/dev/null 2>&1
+"$DEST/BlendKey.app/Contents/MacOS/BlendKey" install >/dev/null 2>&1 || fail "向系統註冊輸入法失敗"
 echo "・已向系統註冊輸入法"
 echo
 

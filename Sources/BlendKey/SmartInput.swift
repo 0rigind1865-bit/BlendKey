@@ -7,7 +7,11 @@ import BlendKeyCore
 /// 模型不綁死：換一個 .gguf 檔（改 modelFileName）就能換更小的模型。
 /// 實驗紀錄見 experiments/ai-prediction/README.md（實驗 G）。
 enum SmartInput {
-    private static let port = 39281
+    /// 依使用者編號錯開（快速切換使用者時兩份融鍵不會搶同一個埠）
+    private static let port = 39281 + Int(getuid()) % 1000
+    /// 伺服器一起來就失敗時，至少隔這麼久才再試，免得每按一個鍵就重開一次
+    private static let restartCooldown: TimeInterval = 30
+    private static var lastStart: Date?
     /// 實驗 I：跟 Breeze-7B（3.7 GB）校正成績相同（修 5、改壞 0）、快 4 倍、記憶體少約 1.5 GB。
     /// 要換回 Breeze 改成 "Breeze-7B-Base-v1_0.Q3_K_M.gguf" 即可。
     private static let modelFileName = "Llama-3.2-Taiwan-3B.Q3_K_M.gguf"
@@ -60,6 +64,8 @@ enum SmartInput {
 
     private static func start() {
         guard !isRunning, let server = serverPath, let model = modelURL, modelExists else { return }
+        if let last = lastStart, Date().timeIntervalSince(last) < restartCooldown { return }
+        lastStart = Date()
         let launched = Process()
         launched.executableURL = URL(fileURLWithPath: "/bin/sh")
         // 外面包一層 sh：融鍵結束（就算當掉）伺服器也跟著結束，不會偷佔記憶體
@@ -86,6 +92,7 @@ enum SmartInput {
     }
 
     static func stop() {
+        lastStart = nil
         idleStop?.cancel()
         idleStop = nil
         cancel(.completion)

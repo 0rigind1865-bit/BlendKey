@@ -22,11 +22,7 @@ class BlendKeyInputController: IMKInputController {
     /// 這段放行字母在文件裡的起點（用位置算術驗證，不需 app 支援讀取內容）
     private static var passthroughAnchor: Int?
     /// 使用者選字學習：全行程共用一份（main.swift 結束前要 flush）
-    static let userPhrases = UserPhraseStore(
-        fileURL: FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("BlendKey/userphrases.json")
-    )
+    static let userPhrases = UserPhraseStore(fileURL: UserPhraseStore.defaultFileURL)
 
     private var engine: InputEngine?
     /// 語音整理中的原文（id 防止舊的整理結果晚到時套錯）；整理好前使用者又打字就先上屏原文

@@ -59,7 +59,7 @@ public final class InputEngine {
     private let lexicon: Lexicon
     private var decoder: SentenceDecoder
     /// 候選字窗每頁字數（偏好設定）
-    public var pageSize = 9
+    public var pageSize = 9 { didSet { pageSize = min(max(pageSize, 1), 9) } }  // 0 會讓換頁除以零
 
     private var elements: [Element] = []
     private var cursor = 0  // 元素邊界位置 0...elements.count
@@ -294,7 +294,7 @@ public final class InputEngine {
                 return handleCharacter(" ")
             }
             // 組字區只有這串數字（沒有注音）：空白直接送出，不開候選窗
-            if numberHint != nil, numericElements == elements.count, !elements.isEmpty {
+            if numberHint != nil, !elements.isEmpty, elements.allSatisfy({ if case .literal = $0 { true } else { false } }) {
                 return Output(handled: true, commitText: flush())
             }
             if !elements.isEmpty { openSheet(); return .consumed }
@@ -346,7 +346,7 @@ public final class InputEngine {
             isInLiteralRun = false
             if !composer.isEmpty {
                 if englishHint != nil { openBilingualSheet() }  // 組字中只開中英並列
-                return elements.isEmpty && englishHint == nil ? .ignored : .consumed
+                return .consumed  // 組字區有字就不能把 ↓ 漏給 app
             }
             guard !elements.isEmpty else { return .ignored }
             openSheet()
@@ -407,13 +407,17 @@ public final class InputEngine {
             let isPinned = pins.contains {
                 $0.start == segment.start && $0.length == segment.length && $0.value == segment.value
             }
-            if segment.length == 1, segment.reading != nil, isPinned {
+            if segment.length == 1, segment.reading != nil, isPinned, !isAIPin(segment) {
                 run.append(segment)
             } else {
                 closeRun()
             }
         }
         closeRun()
+    }
+
+    private func isAIPin(_ segment: DecodedSegment) -> Bool {
+        pins.contains { $0.start == segment.start && $0.length == segment.length && $0.fromAI }
     }
 
     // MARK: - 顯示
@@ -866,7 +870,7 @@ public final class InputEngine {
             pins.removeAll { $0.start < segment.end && segment.start < $0.end }
             pins.append(DecodedSegment(
                 start: segment.start, length: segment.length,
-                value: String(chars[segment.start..<segment.end]), reading: segment.reading
+                value: String(chars[segment.start..<segment.end]), reading: segment.reading, fromAI: true
             ))
         }
         rewalk()
@@ -1077,7 +1081,7 @@ public final class InputEngine {
         pins = pins.compactMap { pin in
             if pin.end <= cursor { return pin }
             if pin.start >= cursor {
-                return DecodedSegment(start: pin.start + 1, length: pin.length, value: pin.value, reading: pin.reading)
+                return pin.shifted(by: 1)
             }
             return nil  // 插入點落在 pin 中間：拆掉
         }
@@ -1090,7 +1094,7 @@ public final class InputEngine {
         pins = pins.compactMap { pin in
             if pin.end <= index { return pin }
             if pin.start > index {
-                return DecodedSegment(start: pin.start - 1, length: pin.length, value: pin.value, reading: pin.reading)
+                return pin.shifted(by: -1)
             }
             return nil  // 覆蓋刪除點的 pin：拆掉
         }

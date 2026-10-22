@@ -7,6 +7,7 @@
 import collections
 import math
 import pathlib
+import sys
 
 SRC = pathlib.Path(".lexicon-src")
 OUT = pathlib.Path("Resources/data/data.txt")
@@ -15,7 +16,8 @@ OUT = pathlib.Path("Resources/data/data.txt")
 def rows(name):
     path = SRC / name
     if not path.exists():
-        return
+        # 缺原始檔就停：默默繼續會把 data.txt 覆寫成幾乎空的詞庫
+        sys.exit(f"錯誤：找不到 {path}，請先跑 scripts/build-data.sh 下載原始詞庫")
     for line in path.read_text().splitlines():
         line = line.strip()
         if not line or line.startswith("#"):

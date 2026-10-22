@@ -25,6 +25,7 @@ public struct Shortcuts: Equatable, Sendable {
 
     public var isEmpty: Bool { entries.isEmpty }
 
+
     /// 第一次開啟時寫進檔案的範例
     public static let template = """
     # 融鍵快捷文字本

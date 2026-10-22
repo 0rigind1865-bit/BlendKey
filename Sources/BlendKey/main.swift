@@ -22,10 +22,7 @@ if CommandLine.arguments.count > 1 {
         if CommandLine.arguments[1] == "guide" {
             GuideWindowController.shared.show()
         } else {
-            let store = UserPhraseStore(
-                fileURL: FileManager.default
-                    .urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-                    .appendingPathComponent("BlendKey/userphrases.json"))
+            let store = UserPhraseStore(fileURL: UserPhraseStore.defaultFileURL)
             LearnedDataWindowController.shared.show(store: store)
         }
         app.run()

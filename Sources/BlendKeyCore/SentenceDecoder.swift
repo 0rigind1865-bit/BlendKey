@@ -15,12 +15,19 @@ public struct DecodedSegment: Equatable, Sendable {
     public let length: Int
     public let value: String
     public let reading: String?  // literal 段為 nil
+    /// 固定來自 AI 校正的 pin 不算使用者自己改字，上屏時不學成造詞
+    public var fromAI = false
 
-    public init(start: Int, length: Int, value: String, reading: String?) {
+    public init(start: Int, length: Int, value: String, reading: String?, fromAI: Bool = false) {
         self.start = start
         self.length = length
         self.value = value
         self.reading = reading
+        self.fromAI = fromAI
+    }
+
+    func shifted(by delta: Int) -> DecodedSegment {
+        DecodedSegment(start: start + delta, length: length, value: value, reading: reading, fromAI: fromAI)
     }
 
     public var end: Int { start + length }
@@ -89,7 +96,7 @@ public struct SentenceDecoder {
             }
             best[unigram.value] = unigram
         }
-        return Array(best.values)
+        return best.values.sorted { $0.value < $1.value }  // 固定順序：同分時結果不隨 hash 種子變動
     }
 
     /// 詞圖上的一個狀態：以某位置結尾的節點，及走到它的最佳分數與回溯指標
