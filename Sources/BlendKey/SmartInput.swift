@@ -138,8 +138,8 @@ enum SmartInput {
         }
     }
 
-    /// 語音整理：講完的逐字稿交給模型去掉「嗯、那個」等贅字與重複、補標點（像 Typeless）。
-    /// completion 一定在主執行緒回呼：伺服器沒開、失敗、逾時、或改得離譜（長度差太多）都回傳原文。
+    /// 語音整理：講完的逐字稿交給模型去掉「嗯、那個」等贅字與重複、補標點、改聽錯的同音字（像 Typeless）。
+    /// completion 一定在主執行緒回呼：伺服器沒開、失敗、逾時、或改動不安全（VoicePolishGuard）都回傳原文。
     static func polish(text: String, completion: @escaping (String) -> Void) {
         guard isRunning, !text.isEmpty else { return completion(text) }
         schedule(.polish, after: 0, body: [
@@ -147,8 +147,10 @@ enum SmartInput {
             "n_predict": text.count * 2 + 8,
             "stop": ["\n"],
         ], failed: { completion(text) }) { content in
-            // ponytail: 長度差超過一半當作模型亂寫，退回原文；之後嫌太嚴再調
-            let ok = !content.isEmpty && content.count * 2 >= text.count && content.count <= text.count * 3 / 2 + 2
+            // 只准換同音字、刪贅字、補標點，其他改動整句退回原文（實驗 J：改對 5、改壞 0）
+            let ok = !content.isEmpty && LexiconStore.lexicon.map {
+                VoicePolishGuard.isSafe(original: text, polished: content, lexicon: $0)
+            } == true
             Log.general.info("語音整理：「\(text, privacy: .private)」→「\(content, privacy: .private)」\(ok ? "" : "（退回原文）", privacy: .public)")
             completion(ok ? content : text)
         }
@@ -193,15 +195,24 @@ enum SmartInput {
         task.resume()
     }
 
-    /// 語音整理的範例：只去贅字、補標點，不改意思
+    /// 語音整理的範例：去贅字、補標點、改聽錯的同音字，不改意思（實驗 J 的提示 B）
     private static let polishFewShot = """
-    以下是口語逐字稿和整理後的文字。整理時去掉「嗯、那個、就是、然後」等贅字與重複的話，補上標點，意思和用字不變。
+    以下是語音辨識的逐字稿和整理後的文字。整理時去掉「嗯、那個、就是、然後」等贅字與重複的話，補上標點，並把聽錯的同音字改成正確的字；其他用字和意思不變。
 
     口語：嗯那個我明天早上大概十點左右到然後我們再討論一下
     整理：我明天早上大概十點左右到，我們再討論一下。
 
     口語：這個這個案子的燈光就是要再加兩支側光喔
     整理：這個案子的燈光要再加兩支側光。
+
+    口語：我等一下把檔案寄給你確任
+    整理：我等一下把檔案寄給你確認。
+
+    口語：我們這週末去看電影好不好
+    整理：我們這週末去看電影好不好？
+
+    口語：會議室的投影機好像懷了
+    整理：會議室的投影機好像壞了。
 
     口語：好的，謝謝你。
     整理：好的，謝謝你。
