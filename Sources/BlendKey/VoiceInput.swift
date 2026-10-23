@@ -1,4 +1,5 @@
 import AVFoundation
+import os
 import Speech
 
 /// 語音輸入：Mac 內建語音辨識（台灣中文，強制本機辨識、不連網）。
@@ -9,7 +10,12 @@ final class VoiceInput {
 
     private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-TW"))
     private let audio = AVAudioEngine()
-    private var request: SFSpeechAudioBufferRecognitionRequest?
+    /// 目前這段辨識。收音 tap 在音訊執行緒讀、主執行緒換新的一段時寫，所以用鎖包起來
+    private let requestLock = OSAllocatedUnfairLock<SFSpeechAudioBufferRecognitionRequest?>(uncheckedState: nil)
+    private var request: SFSpeechAudioBufferRecognitionRequest? {
+        get { requestLock.withLockUnchecked { $0 } }
+        set { requestLock.withLockUnchecked { $0 = newValue } }
+    }
     private var task: SFSpeechRecognitionTask?
     /// 辨識器自己結案（停頓太久）的前幾段，已經定下來的字
     private var committed = ""
@@ -88,7 +94,7 @@ final class VoiceInput {
 
         let input = audio.inputNode
         input.installTap(onBus: 0, bufferSize: 1024, format: input.outputFormat(forBus: 0)) { [weak self] buffer, _ in
-            self?.request?.append(buffer)  // 停頓後換新的一段辨識，聲音接著餵給新的
+            self?.requestLock.withLockUnchecked { $0?.append(buffer) }  // 停頓後換新的一段辨識，聲音接著餵給新的
         }
         do {
             audio.prepare()

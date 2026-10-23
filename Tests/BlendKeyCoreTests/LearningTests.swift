@@ -281,3 +281,26 @@ private func 打擬界並上屏(_ store: UserPhraseStore) -> String? {
     #expect(engine.handle(.enter).commitText == "妳妳")
     #expect(store.userWords(reading: "ㄋㄧˇ-ㄋㄧˇ").isEmpty)
 }
+
+@Test func 開候選只是看看又選回原字_不造詞() {
+    let store = UserPhraseStore(fileURL: nil)
+    let engine = InputEngine(lexicon: 測試詞庫)
+    engine.userPhrases = store
+    for key in "su3ru,4" { _ = engine.handle(.character(key)) }  // 你界
+    _ = engine.handle(.arrowLeft)
+    _ = engine.handle(.arrowLeft)
+    _ = engine.handle(.arrowDown)
+    選字(engine, "你")  // 跟原本一樣
+    _ = engine.handle(.arrowDown)
+    選字(engine, "界")
+    #expect(engine.handle(.enter).commitText == "你界")
+    #expect(store.userWords(reading: "ㄋㄧˇ-ㄐㄧㄝˋ").isEmpty)
+}
+
+@Test func 詞對超過上限_從次數少的丟到八成() {
+    let store = UserPhraseStore(fileURL: nil, transitionLimit: 10)
+    for _ in 0..<3 { store.noteCommit(["我", "是"]) }               // 常用的：3 次
+    for i in 0..<10 { store.noteCommit(["字\(i)", "尾\(i)"]) }      // 一次性的 10 組 → 共 11 組，超過上限
+    #expect(store.transitionCount == 8)                            // 丟到上限的八成
+    #expect(store.transitionBonus(from: "我", to: "是") > 0)       // 常用的留著
+}

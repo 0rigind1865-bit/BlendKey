@@ -33,8 +33,8 @@ public final class UserPhraseStore {
     private let fileURL: URL?
     /// ponytail: 使用者詞固定分數 -8（約當常用詞），穩贏單字拆解路徑；不夠再改動態
     private let userWordScore = -8.0
-    /// ponytail: 詞對上限 20,000，超過就丟掉只出現一次的；不夠再改 LRU
-    private let transitionLimit = 20_000
+    /// ponytail: 詞對上限預設 20,000，超過就從次數最少的丟；不夠再改 LRU
+    private let transitionLimit: Int
 
     /// 預設存放位置（輸入法與學習資料視窗共用）
     public static var defaultFileURL: URL? {
@@ -43,8 +43,9 @@ public final class UserPhraseStore {
     }
 
     /// - Parameter fileURL: nil 表示純記憶體（測試、CLI 用）
-    public init(fileURL: URL?) {
+    public init(fileURL: URL?, transitionLimit: Int = 20_000) {
         self.fileURL = fileURL
+        self.transitionLimit = transitionLimit
         guard let fileURL, let raw = try? Data(contentsOf: fileURL) else { return }
         if let stored = try? JSONDecoder().decode(StoredData.self, from: raw) {
             data = stored
@@ -195,11 +196,14 @@ public final class UserPhraseStore {
         flush()  // 使用者按了清除：立刻生效
     }
 
+    /// 超過上限就從次數最少的開始丟，丟到上限的八成：
+    /// 不會一口氣忘光所有只出現一次的，也不會因為剩下的都 ≥2 而每次上屏都白掃一遍
     private func pruneTransitionsIfNeeded() {
         guard transitionCount > transitionLimit else { return }
-        for (previous, nexts) in data.transitions {
-            let kept = nexts.filter { $0.value > 1 }
-            data.transitions[previous] = kept.isEmpty ? nil : kept
+        let pairs = data.transitions.flatMap { previous, nexts in nexts.map { (previous, $0.key, $0.value) } }
+        for (previous, next, _) in pairs.sorted(by: { $0.2 < $1.2 }).prefix(pairs.count - transitionLimit * 4 / 5) {
+            data.transitions[previous]?[next] = nil
+            if data.transitions[previous]?.isEmpty == true { data.transitions[previous] = nil }
         }
     }
 
@@ -211,7 +215,12 @@ public final class UserPhraseStore {
     private func save() {
         guard fileURL != nil else { return }
         pendingSave?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.flush() }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, let fileURL = self.fileURL else { return }
+            self.pendingSave = nil
+            let snapshot = self.data  // 值型別：複製一份，編碼與寫檔交給背景，不卡打字
+            self.ioQueue.async { Self.write(snapshot, to: fileURL) }
+        }
         pendingSave = work
         DispatchQueue.main.asyncAfter(deadline: .now() + saveDelay, execute: work)
     }
@@ -221,10 +230,18 @@ public final class UserPhraseStore {
         pendingSave?.cancel()
         pendingSave = nil
         guard let fileURL else { return }
+        let snapshot = data
+        ioQueue.sync { Self.write(snapshot, to: fileURL) }  // 同一條佇列：排在還沒寫完的背景存檔後面
+    }
+
+    /// 寫檔一律走這條序列佇列，先後順序不會亂
+    private let ioQueue = DispatchQueue(label: "org.blendkey.userphrases")
+
+    private static func write(_ snapshot: StoredData, to fileURL: URL) {
         try? FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true
         )
-        if let encoded = try? JSONEncoder().encode(data) {
+        if let encoded = try? JSONEncoder().encode(snapshot) {
             try? encoded.write(to: fileURL, options: .atomic)
         }
     }

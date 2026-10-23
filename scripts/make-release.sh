@@ -1,16 +1,18 @@
 #!/bin/bash
 # 打包可散布的 zip：BlendKey.app ＋ 雙擊安裝腳本 ＋ 說明
 # 用法：scripts/make-release.sh [版本號]
-# 簽章：預設用鑰匙圈裡第一個可用身分；有 Developer ID 時設 CODESIGN_IDENTITY 以便公證
+# 簽章：跟 package-app.sh 同一套（有自製「BlendKey」憑證就用、沒有就 ad-hoc）；
+# 有 Developer ID 時設 CODESIGN_IDENTITY 以便公證
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="${1:-$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)}"
-IDENTITY="${CODESIGN_IDENTITY:-$(security find-identity -v -p codesigning | awk -F'"' 'NR==1{print $2}')}"
-[ -n "$IDENTITY" ] || IDENTITY="-"
+PLIST_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
+VERSION="${1:-$PLIST_VERSION}"
+# Info.plist 刻意凍結（改了要重新登入才生效），所以版本號只用在 zip 檔名，這裡提醒一下
+[ "$VERSION" = "$PLIST_VERSION" ] || echo "提醒：zip 版本 $VERSION 與 Info.plist 的 $PLIST_VERSION 不同（Info.plist 刻意凍結）"
+IDENTITY="${CODESIGN_IDENTITY:-}"
 
-echo "版本 $VERSION／簽章身分：$IDENTITY"
-CODESIGN_IDENTITY="$IDENTITY" scripts/package-app.sh
+scripts/package-app.sh
 
 STAGE="build/融鍵 BlendKey $VERSION"
 rm -rf "$STAGE" && mkdir -p "$STAGE"
@@ -45,7 +47,7 @@ rm -f "$ZIP"
 (cd build && zip -qry "$(basename "$ZIP")" "$(basename "$STAGE")")
 
 echo "完成：$ZIP（$(du -h "$ZIP" | cut -f1)）"
-codesign -dv "$STAGE/BlendKey.app" 2>&1 | grep -E 'Authority|Signature' | head -2 || true
+codesign -dv "$STAGE/BlendKey.app" 2>&1 | grep -E 'Authority|Signature' | head -2 || true  # 實際用的簽章
 if [[ "$IDENTITY" == *"Developer ID"* ]]; then
   echo "偵測到 Developer ID —— 可接著公證："
   echo "  xcrun notarytool submit \"$ZIP\" --keychain-profile <設定檔> --wait"

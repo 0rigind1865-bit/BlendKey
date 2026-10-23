@@ -395,29 +395,27 @@ public final class InputEngine {
     private func learnPinnedWords() {
         guard let store = userPhrases else { return }
         var run: [DecodedSegment] = []
+        var changed = false  // 這串裡至少有一個字是使用者真的改過的（不是只確認、也不是 AI 改的）
         func closeRun() {
-            defer { run = [] }
-            guard (2...6).contains(run.count) else { return }
+            defer { run = []; changed = false }
+            guard changed, (2...6).contains(run.count) else { return }
             store.noteWordCandidate(
                 reading: run.compactMap(\.reading).joined(separator: "-"),
                 value: run.map(\.value).joined()
             )
         }
         for segment in walked {
-            let isPinned = pins.contains {
+            let pin = pins.first {
                 $0.start == segment.start && $0.length == segment.length && $0.value == segment.value
             }
-            if segment.length == 1, segment.reading != nil, isPinned, !isAIPin(segment) {
+            if segment.length == 1, segment.reading != nil, let pin {
                 run.append(segment)
+                if !pin.keepsOriginal { changed = true }
             } else {
                 closeRun()
             }
         }
         closeRun()
-    }
-
-    private func isAIPin(_ segment: DecodedSegment) -> Bool {
-        pins.contains { $0.start == segment.start && $0.length == segment.length && $0.fromAI }
     }
 
     // MARK: - 顯示
@@ -870,7 +868,7 @@ public final class InputEngine {
             pins.removeAll { $0.start < segment.end && segment.start < $0.end }
             pins.append(DecodedSegment(
                 start: segment.start, length: segment.length,
-                value: String(chars[segment.start..<segment.end]), reading: segment.reading, fromAI: true
+                value: String(chars[segment.start..<segment.end]), reading: segment.reading, keepsOriginal: true
             ))
         }
         rewalk()
@@ -1052,6 +1050,11 @@ public final class InputEngine {
     }
 
     private func select(_ segment: DecodedSegment) {
+        var segment = segment
+        // 選的就是原本組出來的字：只是確認，不算改字
+        segment.keepsOriginal = walked.contains {
+            $0.start == segment.start && $0.length == segment.length && $0.value == segment.value
+        }
         pins.removeAll { $0.start < segment.end && segment.start < $0.end }
         pins.append(segment)
         if let reading = segment.reading, !DateMacro.forms(for: reading).contains(segment.value) {

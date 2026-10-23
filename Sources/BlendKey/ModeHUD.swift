@@ -9,6 +9,8 @@ final class ModeHUD {
     private let panel: NSPanel
     private let hosting = NSHostingView(rootView: AnyView(EmptyView()))
     private var hideWork: DispatchWorkItem?
+    /// 第幾次 show：淡出結束時比對，期間又 show 過就不收起來
+    private var shown = 0
 
     private init() {
         panel = NSPanel(
@@ -70,11 +72,14 @@ final class ModeHUD {
     }
 
     func hide(after delay: TimeInterval = 0) {
-        let work = DispatchWorkItem { [panel] in
+        let generation = shown
+        let work = DispatchWorkItem { [weak self, panel] in
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.25
                 panel.animator().alphaValue = 0
             } completionHandler: {
+                // 淡出途中又 show 了（例如 Shift 切換後馬上按右 Option）：不要把新的關掉
+                guard self?.shown == generation else { return }
                 panel.orderOut(nil)
             }
         }
@@ -85,6 +90,7 @@ final class ModeHUD {
 
     private func show(_ content: some View, near lineRect: NSRect) {
         hideWork?.cancel()
+        shown += 1
         hosting.rootView = AnyView(content)
         var origin = NSPoint(x: lineRect.minX, y: lineRect.minY - 8 - 54)
         let screen = NSScreen.screens.first { NSPointInRect(lineRect.origin, $0.frame) } ?? NSScreen.main
@@ -96,7 +102,8 @@ final class ModeHUD {
             }
         }
         panel.setFrameOrigin(origin)
-        panel.alphaValue = 1
+        // 用 0 秒動畫蓋掉還在跑的淡出（直接設 alphaValue 會被淡出的下一格改回去）
+        NSAnimationContext.runAnimationGroup { $0.duration = 0; panel.animator().alphaValue = 1 }
         panel.orderFrontRegardless()
     }
 }

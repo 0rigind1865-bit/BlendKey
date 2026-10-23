@@ -15,19 +15,19 @@ public struct DecodedSegment: Equatable, Sendable {
     public let length: Int
     public let value: String
     public let reading: String?  // literal 段為 nil
-    /// 固定來自 AI 校正的 pin 不算使用者自己改字，上屏時不學成造詞
-    public var fromAI = false
+    /// 這個 pin 不算使用者自己改字（AI 校正改的、或開候選只是看看又選回原字），上屏時不學成造詞
+    public var keepsOriginal = false
 
-    public init(start: Int, length: Int, value: String, reading: String?, fromAI: Bool = false) {
+    public init(start: Int, length: Int, value: String, reading: String?, keepsOriginal: Bool = false) {
         self.start = start
         self.length = length
         self.value = value
         self.reading = reading
-        self.fromAI = fromAI
+        self.keepsOriginal = keepsOriginal
     }
 
     func shifted(by delta: Int) -> DecodedSegment {
-        DecodedSegment(start: start + delta, length: length, value: value, reading: reading, fromAI: fromAI)
+        DecodedSegment(start: start + delta, length: length, value: value, reading: reading, keepsOriginal: keepsOriginal)
     }
 
     public var end: Int { start + length }
