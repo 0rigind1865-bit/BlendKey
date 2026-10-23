@@ -126,8 +126,12 @@ class BlendKeyInputController: IMKInputController {
         Self.optionDetector.noteKeyDown()
         settlePolish(client)
 
-        // 語音輸入中按任何鍵：先把聽到的字上屏。Esc＝不要了；Enter＝只上屏；其他鍵照常處理
+        // 語音輸入中按任何鍵：先把聽到的字上屏。Esc＝不要了；Enter＝只上屏；退格＝刪一字繼續聽；其他鍵照常處理
         if VoiceInput.shared.isListening {
+            if Int(event.keyCode) == kVK_Delete {
+                showVoice(VoiceInput.shared.deleteBackward(), client: client)
+                return true
+            }
             let heard = VoiceInput.shared.finishNow()
             switch Int(event.keyCode) {
             case kVK_Escape:

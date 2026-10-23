@@ -21,6 +21,8 @@ final class VoiceInput {
     private var stopping = false
     /// 定案時呼叫（結束後辨識器送回最後結果；失敗則給目前已聽到的字）
     private var onFinal: ((String) -> Void)?
+    /// 字變了就回呼（退格後重開一段辨識要沿用）
+    private var onPartial: ((String) -> Void)?
 
     /// 等授權回覆中：擋掉重複開始（兩次 begin 會對同一個 bus 裝兩次 tap 而閃退）。
     /// 不算「在聽」——切換焦點觸發的 commitComposition 不能把還沒開始的這次取消掉
@@ -60,6 +62,18 @@ final class VoiceInput {
         return text
     }
 
+    /// 講話中按退格：刪掉最後一個字、繼續聽。目前這段先定下來，再開新的一段接著辨識，
+    /// 不然辨識器下一次回報又會把刪掉的字寫回來。
+    /// ponytail: 剛講完還沒辨識出來的那零點幾秒會丟掉；嫌會漏字再改成等這段結案
+    func deleteBackward() -> String {
+        guard isListening, let recognizer, let onPartial else { return heard }
+        committed = String(heard.dropLast())
+        partial = ""
+        task?.cancel()  // 舊這段晚到的回呼會被 request === 檢查擋掉
+        startTask(recognizer: recognizer, onPartial: onPartial)
+        return heard
+    }
+
     private func begin(onPartial: @escaping (String) -> Void, onFinal: @escaping (String) -> Void) {
         guard let recognizer, recognizer.isAvailable, recognizer.supportsOnDeviceRecognition else {
             Log.general.error("語音輸入：這台 Mac 不能在本機辨識台灣中文")
@@ -67,6 +81,7 @@ final class VoiceInput {
             return
         }
         self.onFinal = onFinal
+        self.onPartial = onPartial
         committed = ""
         partial = ""
         stopping = false
@@ -138,6 +153,7 @@ final class VoiceInput {
         task = nil
         request = nil
         onFinal = nil
+        onPartial = nil
         committed = ""
         partial = ""
         stopping = false
