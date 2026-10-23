@@ -50,6 +50,7 @@
   - **AI 補句**：打了 6 個字以上（含游標前同一行）再停一下，提示列最前面出現 ✨ 接下去的字（報價單我等一下會｜寄過去），按 **→** 接受（游標在句尾時 → 原本沒有作用）或滑鼠點
   - **AI 校正**：停一下，組字區的同音錯字自動改掉（打的自→打的字、要千→要簽）；用文法限制讓模型**每一格只能選同音字**（寫不出不同音的字），核心再驗一次同音，改錯了照常 ↓ 換回
   - 需要 `brew install llama.cpp` 與模型檔（`~/Library/Application Support/BlendKey/models/Llama-3.2-Taiwan-3B.Q3_K_M.gguf`，1.86 GB，取自 [QuantFactory/Llama-3.2-Taiwan-3B-GGUF](https://huggingface.co/QuantFactory/Llama-3.2-Taiwan-3B-GGUF)）；偏好設定「啟用智慧輸入」打勾才啟動（約佔 2.5 GB 記憶體），**3 分鐘沒打字自動關閉**、一打字再啟動（載入要 10～30 秒），取消或融鍵結束（含當掉）就關閉。實驗數據見 `experiments/ai-prediction/`
+- **語音輸入**——打到一半想用講的：單按**右 Option** 開始，游標旁出現紅色聲波，講的字即時以底線顯示；再按一下右 Option（或 Enter）結束上屏。講話中按**退格**刪掉最後一個字、繼續聽；Esc 取消；直接打字會先把講的字送出再接著打。用 Mac 內建語音辨識，**強制在本機辨識、不連網**；第一次會要麥克風與語音辨識權限。智慧輸入有開的話，講完會由本機模型去掉「嗯、那個」等贅字、補標點、改聽錯的同音字（只准換同音字，其他改動整句退回原文）。偏好設定可關閉
 - **符號表**——按 `` ` ``（數字 1 左邊）叫出 …、——、《》、→、±、℃、①、NT$、框線等，一頁一類、←→ 翻頁；連按兩下輸出 `` ` `` 本身
 - **日期快打**——打「今天」按空白，候選窗多出 `2026-10-20`、`2026年10月20日`、`民國115年10月20日`、`10月20日（二）`；明天／昨天／後天／前天同理，「現在」出時間
 - **數字轉大寫**——打 `1234` 按 Tab 再按空白，可換成 `1,234`、`壹仟貳佰參拾肆`、`新臺幣壹仟貳佰參拾肆元整`、`一千二百三十四`、全形 `１２３４`（開收據、報價單用）
@@ -102,6 +103,7 @@ scripts/make-release.sh # 打包可散布的 zip（含安裝腳本）
 | Enter | 上屏（偵測到英文時送出英文字母；數字串組不成中文時直接出數字，`1.62`、`2026` 不必按 Tab） |
 | Esc | 清組字／關候選窗 |
 | Shift 單擊 | 切換中／英（偏好設定可改成只認右 Shift） |
+| 右 Option 單擊 | 語音輸入開始／結束（講話中：退格＝刪一字繼續聽、Enter＝上屏、Esc＝取消） |
 | Shift＋退格 | 游標左邊那個字「選錯了」：忘掉它的學習並重新組字 |
 | Shift＋字母 | 開英文接續段（首字母大寫；後續小寫原樣，空白標點半形） |
 | 接續段中單擊 Shift／Esc | 結束英文段，回注音組字（直接打注音也會自動回來） |
@@ -119,7 +121,7 @@ scripts/make-release.sh # 打包可散布的 zip（含安裝腳本）
 ## 開發
 
 ```bash
-swift test               # 101 個核心單元測試（組字、斷詞、混輸、學習）
+swift test               # 143 個核心單元測試（組字、斷詞、混輸、學習、語音整理保險）
 swift run blendkey-cli   # REPL：不安裝也能玩整條組字管線
 log stream --level debug --predicate 'subsystem == "org.blendkey.inputmethod.BlendKey"'
 
@@ -127,7 +129,17 @@ log stream --level debug --predicate 'subsystem == "org.blendkey.inputmethod.Ble
 swift run -c release blendkey-cli --eval Tests/Fixtures/sentences.tsv
 ```
 
+只裝 Command Line Tools（沒有 Xcode）時 `swift test` 會報 `no such module 'Testing'`，改用：
+
+```bash
+F=/Library/Developer/CommandLineTools/Library/Developer/Frameworks
+L=/Library/Developer/CommandLineTools/Library/Developer/usr/lib
+swift test -Xswiftc -F$F -Xlinker -F$F -Xlinker -rpath -Xlinker $F -Xlinker -rpath -Xlinker $L
+```
+
 架構：`BlendKeyCore`（純邏輯，零 AppKit 依賴，全部可測）＋ `BlendKey`（InputMethodKit 殼層）。
+引擎 `InputEngine` 依職責分檔：狀態與按鍵入口（`InputEngine.swift`）、一般按鍵（`+Typing`）、
+候選窗與中英並列（`+Sheets`）、聯想詞與 AI（`+Suggestions`）、顯示（`+Display`）。
 純 SwiftPM，不需要 Xcode 專案檔；`scripts/package-app.sh` 負責組 .app bundle 與簽章。
 
 ## 已知限制
