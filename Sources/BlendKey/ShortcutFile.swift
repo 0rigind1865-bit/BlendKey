@@ -2,7 +2,7 @@ import Cocoa
 import BlendKeyCore
 
 /// 快捷文字本的檔案：Application Support/BlendKey/shortcuts.txt。
-/// 每次按鍵看一下修改時間，變了才重讀（stat 一次的成本可忽略）；編輯交給使用者慣用的文字編輯器。
+/// 最多每 2 秒看一次修改時間，變了才重讀；編輯交給使用者慣用的文字編輯器。
 enum ShortcutFile {
     static let url = FileManager.default
         .urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
@@ -10,9 +10,11 @@ enum ShortcutFile {
 
     private static var cached = Shortcuts()
     private static var cachedModified: Date?
+    private static var lastChecked = Date.distantPast
 
     static func current() -> Shortcuts {
-        guard let url else { return cached }
+        guard let url, Date().timeIntervalSince(lastChecked) > 2 else { return cached }
+        lastChecked = Date()
         let modified = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
         if modified != cachedModified {
             cachedModified = modified

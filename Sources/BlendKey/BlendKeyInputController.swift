@@ -472,8 +472,10 @@ class BlendKeyInputController: IMKInputController {
 
     private func syncUI(_ engine: InputEngine, client: IMKTextInput) {
         setMarked(engine.preedit(), client: client)
-        requestCompletionIfNeeded(engine, client: client)
-        requestCorrectionIfNeeded(engine, client: client)
+        // 游標前文字要跨行程同步問 app（Word、Electron 很慢）：補句與校正共用一次，需要才問
+        lazy var before = textBeforeComposition(client)
+        requestCompletionIfNeeded(engine, client: client, before: { before })
+        requestCorrectionIfNeeded(engine, client: client, before: { before })
         if let sheet = engine.sheetView() ?? engine.englishHintView() ?? engine.associationView() {
             var lineRect = NSRect.zero
             client.attributes(forCharacterIndex: sheet.anchorUTF16, lineHeightRectangle: &lineRect)
@@ -506,14 +508,14 @@ class BlendKeyInputController: IMKInputController {
     }
 
     /// AI 補句：組好的字變了就（停手後）問一次；結果回來時組字區還是同一句才顯示
-    private func requestCompletionIfNeeded(_ engine: InputEngine, client: IMKTextInput) {
+    private func requestCompletionIfNeeded(_ engine: InputEngine, client: IMKTextInput, before: () -> String) {
         guard Self.smartInputOn(.aiCompletion), let text = engine.completionContext else {
             SmartInput.cancel(.completion)
             Self.lastCompletionRequest = nil
             return
         }
         guard engine.aiCompletion == nil, text != Self.lastCompletionRequest else { return }
-        let before = textBeforeComposition(client)
+        let before = before()
         guard (before + text).filter({ !$0.isWhitespace }).count >= Self.minimumCompletionContext else {
             SmartInput.cancel(.completion)
             return
@@ -527,7 +529,7 @@ class BlendKeyInputController: IMKInputController {
     }
 
     /// AI 校正：組字區變了就（停手後）問一次；回來時組字區還是同一句才套用（只採用同音的改動）
-    private func requestCorrectionIfNeeded(_ engine: InputEngine, client: IMKTextInput) {
+    private func requestCorrectionIfNeeded(_ engine: InputEngine, client: IMKTextInput, before: () -> String) {
         guard Self.smartInputOn(.smartCorrection), let target = engine.correctionTarget,
               let grammar = engine.correctionGrammar else {
             SmartInput.cancel(.correction)
@@ -535,7 +537,7 @@ class BlendKeyInputController: IMKInputController {
             return
         }
         guard target.text != Self.lastCorrectionRequest else { return }
-        let before = textBeforeComposition(client)
+        let before = before()
         guard (before + target.text).filter({ !$0.isWhitespace }).count >= Self.minimumCompletionContext else {
             SmartInput.cancel(.correction)
             Log.general.info("AI 校正：字數不到 \(Self.minimumCompletionContext, privacy: .public) 個，先不問")

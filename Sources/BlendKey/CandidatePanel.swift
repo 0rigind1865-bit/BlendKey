@@ -93,6 +93,8 @@ final class CandidatePanel: NSPanel {
 
     private let hosting = ClickableHostingView(rootView: AnyView(EmptyView()))
     private var ownerID: ObjectIdentifier?
+    /// 目前顯示中的內容：一樣就不重建畫面
+    private var shownSheet: InputEngine.SheetView?
 
     private init() {
         super.init(
@@ -137,8 +139,13 @@ final class CandidatePanel: NSPanel {
         _ sheet: InputEngine.SheetView, near lineRect: NSRect, clientLevel: Int32, owner: AnyObject,
         onSelect: @escaping (Int) -> Void
     ) {
+        // 內容沒變（同一個輸入框、同一頁候選）就不重建 SwiftUI 畫面，只重新定位
+        let sameContent = isVisible && ownerID == ObjectIdentifier(owner) && shownSheet == sheet
         ownerID = ObjectIdentifier(owner)
-        hosting.rootView = AnyView(CandidateView(sheet: sheet, onSelect: onSelect))
+        if !sameContent {
+            shownSheet = sheet
+            hosting.rootView = AnyView(CandidateView(sheet: sheet, onSelect: onSelect))
+        }
         let size = hosting.fittingSize
         setContentSize(size)
         level = NSWindow.Level(rawValue: max(Int(clientLevel) + 1, NSWindow.Level.popUpMenu.rawValue))
@@ -157,6 +164,7 @@ final class CandidatePanel: NSPanel {
         guard ownerID == nil || ownerID == ObjectIdentifier(owner) else { return }
         orderOut(nil)
         ownerID = nil
+        shownSheet = nil
         hosting.rootView = AnyView(EmptyView())  // 放掉點擊回呼抓住的 client
     }
 }
