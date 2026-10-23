@@ -335,6 +335,7 @@ class BlendKeyInputController: IMKInputController {
             voice.stop()  // 等辨識器送回定案結果，由 onFinal 上屏
             return
         }
+        settlePolish(client)  // 上一句還在整理：先上屏原文，免得被這次的組字區蓋掉
         if let engine { flushBeforePassthrough(engine, client: client) }
         // 智慧輸入總開關有開：講話的同時先把模型伺服器叫起來，講完才來得及整理
         if UserDefaults.standard.bool(forKey: SettingKey.smartInput) { SmartInput.setEnabled(true) }

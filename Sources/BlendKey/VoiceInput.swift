@@ -22,19 +22,18 @@ final class VoiceInput {
     /// 定案時呼叫（結束後辨識器送回最後結果；失敗則給目前已聽到的字）
     private var onFinal: ((String) -> Void)?
 
-    /// 等授權回覆中（第一次會跳系統視窗）：也算在聽，免得再按一次又開一次而閃退
+    /// 等授權回覆中：擋掉重複開始（兩次 begin 會對同一個 bus 裝兩次 tap 而閃退）。
+    /// 不算「在聽」——切換焦點觸發的 commitComposition 不能把還沒開始的這次取消掉
     private var starting = false
 
-    var isListening: Bool { request != nil || starting }
+    var isListening: Bool { request != nil }
 
     /// 開始聽。onPartial：字變了就回呼（主執行緒）；onFinal：stop() 後拿到定案文字
     func start(onPartial: @escaping (String) -> Void, onFinal: @escaping (String) -> Void) {
-        guard !isListening else { return }
+        guard !isListening, !starting else { return }
         starting = true
-        self.onFinal = onFinal
         authorize { [weak self] granted in
-            // 等授權時被 stop／finishNow 取消了就不開
-            guard let self, self.starting else { return }
+            guard let self else { return }
             self.starting = false
             guard granted else {
                 Log.general.error("語音輸入：沒有麥克風或語音辨識權限")
@@ -48,13 +47,6 @@ final class VoiceInput {
     /// 結束：停止收音，等辨識器送回定案結果（本機辨識通常一下子就回）
     func stop() {
         guard isListening else { return }
-        guard request != nil else {
-            // 還在等授權就按結束：取消，回呼空字讓畫面收掉
-            let deliver = onFinal
-            reset()
-            deliver?("")
-            return
-        }
         stopping = true
         stopAudio()
         request?.endAudio()
@@ -145,7 +137,6 @@ final class VoiceInput {
         task?.cancel()
         task = nil
         request = nil
-        starting = false
         onFinal = nil
         committed = ""
         partial = ""
