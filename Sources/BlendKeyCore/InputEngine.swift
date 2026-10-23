@@ -56,18 +56,18 @@ public final class InputEngine {
 
     // MARK: - 狀態
 
-    private let lexicon: Lexicon
-    private var decoder: SentenceDecoder
+    let lexicon: Lexicon
+    var decoder: SentenceDecoder
     /// 候選字窗每頁字數（偏好設定）
     public var pageSize = 9 { didSet { pageSize = min(max(pageSize, 1), 9) } }  // 0 會讓換頁除以零
 
-    private var elements: [Element] = []
-    private var cursor = 0  // 元素邊界位置 0...elements.count
-    private var pins: [DecodedSegment] = []
-    private var composer = SyllableComposer()
-    private var walked: [DecodedSegment] = []
+    var elements: [Element] = []
+    var cursor = 0  // 元素邊界位置 0...elements.count
+    var pins: [DecodedSegment] = []
+    var composer = SyllableComposer()
+    var walked: [DecodedSegment] = []
 
-    private struct Sheet {
+    struct Sheet {
         /// 選字改詞（pin）、插入符號、或把某個數字元素換成另一種寫法
         enum Kind: Equatable { case words, symbols, number(index: Int) }
         var all: [DecodedSegment]
@@ -75,31 +75,31 @@ public final class InputEngine {
         var highlighted: Int
         var kind = Kind.words
     }
-    private var sheet: Sheet?
+    var sheet: Sheet?
     /// 已由長按轉成直出的鍵：吞掉它後續的自動重複
-    private var longPressKey: Character?
+    var longPressKey: Character?
     /// 進行中的「數字起頭英數串」（1.62、1mm、0.4mm；空字串＝未追蹤）與期間組出的元素數
-    private var numericRaw = ""
-    private var numericElements = 0
+    var numericRaw = ""
+    var numericElements = 0
     /// 英文接續段：Shift+字母或長按開啟後，後續按鍵原樣直出（大小寫、數字、
     /// 半形標點、空白），直到 Shift 單擊／Esc／方向鍵／上屏結束
-    public private(set) var isInLiteralRun = false
+    public internal(set) var isInLiteralRun = false
     /// 英文段裡的反向偵測（同英文模式）：發現在打注音就自動結束英文段、改組中文
-    private lazy var literalRunDetector = ChineseTypingDetector { [lexicon] reading in
+    lazy var literalRunDetector = ChineseTypingDetector { [lexicon] reading in
         !lexicon.unigrams(reading).isEmpty
     }
 
     /// 中英並列選字：組字中偵測到英文時按空白／↓ 開啟，
     /// 英文大小寫變體與一聲中文字並列，數字直選
-    private enum BilingualChoice: Equatable {
+    enum BilingualChoice: Equatable {
         case english(String)
         case tone1(display: String)
     }
-    private struct BilingualSheet {
+    struct BilingualSheet {
         var choices: [BilingualChoice]
         var highlighted = 0
     }
-    private var bilingual: BilingualSheet?
+    var bilingual: BilingualSheet?
 
     /// 聯想詞（像手機鍵盤）：組字中依「你打過的詞語接續」提示下一個詞。
     /// 先按 Tab 進入選擇（第一個反白），再按 1〜5 選、或再按一次 Tab 選反白的；滑鼠點任一個。
@@ -110,7 +110,7 @@ public final class InputEngine {
     /// ponytail: 上屏後不提示——那時 Tab 屬於 app（縮排、換欄），只剩滑鼠能選反而礙眼
     public var associationsEnabled = true
     /// 按過 Tab、等使用者選第幾個；任何其他按鍵或組字區變動都會取消
-    private var associationArmed = false
+    var associationArmed = false
 
     /// AI 補句：殼層非同步問 AI 後填入，顯示在提示列最前面，按 → 接受。
     /// 組字區一有變動（rewalk）就作廢，所以不會顯示過期的補句。
@@ -201,7 +201,7 @@ public final class InputEngine {
 
     /// 常見單位白名單。刻意排除 k／l／p／i／o／u／j 等單字母——
     /// 它們接在數字鍵後面正好是 ㄉㄜ、ㄉㄠ、ㄅㄛ 這些高頻注音組合。
-    private static let units: Set<String> = [
+    static let units: Set<String> = [
         // 長度
         "mm", "cm", "dm", "m", "km", "nm", "um", "in", "ft", "yd", "mil",
         // 重量
@@ -238,7 +238,7 @@ public final class InputEngine {
 
     /// 組字中的顯示：偵測到英文就顯示原始字母——打 google 看到 google，
     /// 而不是被覆寫剩下的「ㄍㄠ」；Enter 送出的也是這個
-    private var composingText: String { englishHint ?? composer.display }
+    var composingText: String { englishHint ?? composer.display }
 
     // MARK: - 事件入口
 
@@ -360,10 +360,7 @@ public final class InputEngine {
                 acceptNumber()
                 return .consumed
             }
-            if let hint = englishHint {
-                composer.clear()
-                insertLiteral(hint)
-            }
+            acceptHint()
             // 組字區只有英文（前面沒中文）：送出並把 Tab 還給 app——
             // 終端機的自動補完、Claude Code 的 / 指令照常能用。前面有中文時 Tab 只收字，不送
             if isPureLiteral { return Output(handled: false, commitText: flush()) }
@@ -392,7 +389,7 @@ public final class InputEngine {
 
     /// 自動造詞：上屏時，把「連續被改字（pin）的單字串」回報為造詞候補。
     /// 升格門檻由 UserPhraseStore 決定（目前一次就學）。
-    private func learnPinnedWords() {
+    func learnPinnedWords() {
         guard let store = userPhrases else { return }
         var run: [DecodedSegment] = []
         var changed = false  // 這串裡至少有一個字是使用者真的改過的（不是只確認、也不是 AI 改的）
@@ -418,669 +415,17 @@ public final class InputEngine {
         closeRun()
     }
 
-    // MARK: - 顯示
-
-    public func preedit() -> Preedit {
-        let texts = elementTexts()
-        let active = anchorSegment()
-        var pieces: [Preedit.Piece] = []
-        var caret = 0
-
-        func append(_ text: String, _ style: Preedit.Style) {
-            guard !text.isEmpty else { return }
-            if let last = pieces.last, last.style == style {
-                pieces[pieces.count - 1] = Preedit.Piece(text: last.text + text, style: style)
-            } else {
-                pieces.append(Preedit.Piece(text: text, style: style))
-            }
-        }
-
-        // 游標在句中時畫出插入記號；句尾不畫（app 自己的游標就在那，畫了反而多餘），
-        // 正在打注音時也不畫（注音本身就長在游標處，位置一目了然）
-        let showCaretMark = composer.isEmpty && cursor < elements.count
-        var caretMarkOffset: Int?
-
-        for index in 0..<elements.count {
-            if index == cursor {
-                append(composingText, .raw)
-                caret = pieces.reduce(0) { $0 + $1.text.utf16.count }
-                if showCaretMark {
-                    caretMarkOffset = caret
-                    append(Self.caretMark, .caret)
-                }
-            }
-            let style: Preedit.Style =
-                (active != nil && index >= active!.start && index < active!.end) ? .active : .converted
-            append(texts[index], style)
-        }
-        if cursor == elements.count {
-            append(composingText, .raw)
-            caret = pieces.reduce(0) { $0 + $1.text.utf16.count }
-        }
-        // 游標所在詞的反白範圍：只在沒有組字中的注音時提供，
-        // 這樣使用者用方向鍵回頭改字時看得見自己停在哪個詞
-        // 反白「游標所在的那個字」而非整個詞：先前框整個詞，導致在多字詞
-        // 內移動游標時畫面完全沒變化，使用者看不出游標在哪。
-        var activeRange: (start: Int, length: Int)?
-        if composer.isEmpty, !elements.isEmpty {
-            let index = max(0, min(cursor - 1, elements.count - 1))
-            let texts = elementTexts()
-            var start = texts[..<index].reduce(0) { $0 + $1.utf16.count }
-            let width = texts[index].utf16.count
-            if let offset = caretMarkOffset, offset <= start {
-                start += Self.caretMark.utf16.count  // 記號插在前面，反白起點跟著移
-            }
-            if width > 0 { activeRange = (start: start, length: width) }
-        }
-        return Preedit(pieces: pieces, caretUTF16: caret, activeRangeUTF16: activeRange)
-    }
-
-    public func sheetView() -> SheetView? {
-        if let bilingual {
-            let items = bilingual.choices.enumerated().map { offset, choice in
-                let value: String
-                switch choice {
-                case .english(let text): value = text
-                case .tone1(let display): value = display
-                }
-                return SheetView.Item(label: "\(offset + 1)", value: value)
-            }
-            let current = preedit()
-            return SheetView(
-                items: items,
-                highlightedInPage: bilingual.highlighted,
-                pageIndex: 0,
-                pageCount: 1,
-                anchorUTF16: current.caretUTF16 - composingText.utf16.count
-            )
-        }
-        guard let sheet, !sheet.all.isEmpty else { return nil }
-        let pageCount = (sheet.all.count + pageSize - 1) / pageSize
-        let page = sheet.highlighted / pageSize
-        let range = (page * pageSize)..<min(sheet.all.count, (page + 1) * pageSize)
-        let items = sheet.all[range].enumerated().map { offset, segment in
-            SheetView.Item(label: "\(offset + 1)", value: segment.value)
-        }
-        let anchorUTF16 = elementTexts()[..<min(sheet.anchor, elements.count)]
-            .reduce(0) { $0 + $1.utf16.count }
-        return SheetView(
-            items: items,
-            highlightedInPage: sheet.highlighted - page * pageSize,
-            pageIndex: page,
-            pageCount: pageCount,
-            anchorUTF16: anchorUTF16
-        )
-    }
-
-    /// 聯想詞提示的呈現（橫排、標 1〜5；按了 Tab 第一個反白）
-    public func associationView() -> SheetView? {
-        let shown = visibleAssociations
-        let completion = visibleCompletion
-        guard !shown.isEmpty || completion != nil else { return nil }
-        var items = shown.enumerated().map { SheetView.Item(label: "\($0.offset + 1)", value: $0.element) }
-        if let completion { items.insert(SheetView.Item(label: "✨→", value: completion), at: 0) }
-        return SheetView(
-            items: items,
-            highlightedInPage: associationArmed ? (completion == nil ? 0 : 1) : -1, pageIndex: 0, pageCount: 1,
-            // 對齊最後一個詞的開頭（同英文提示）。組字文字的「結尾」位置很多 app 回報不出來，窗會跑掉
-            anchorUTF16: walked.last.map { elementTexts()[..<$0.start].reduce(0) { $0 + $1.utf16.count } } ?? 0,
-            horizontal: true
-        )
-    }
-
-    /// 英文／數字提示的候選窗呈現（單一項目、⇥ 標籤、不搶按鍵）
-    public func englishHintView() -> SheetView? {
-        guard sheet == nil, bilingual == nil else { return nil }
-        let numeric = numericRaw.count >= 2 ? numberHint : nil
-        guard let hint = numeric ?? englishHint else { return nil }
-        let current = preedit()
-        // 英文提示只跨組字中的注音；數字提示還要往回涵蓋這串期間已組出的字
-        var width = composingText.utf16.count
-        if numeric != nil {
-            let texts = elementTexts()
-            for index in max(0, cursor - numericElements)..<cursor {
-                width += texts[index].utf16.count
-            }
-        }
-        return SheetView(
-            items: [SheetView.Item(label: "⇥", value: hint)],
-            highlightedInPage: -1,
-            pageIndex: 0,
-            pageCount: 1,
-            anchorUTF16: max(0, current.caretUTF16 - width)
-        )
-    }
-
-    // MARK: - 字元與候選窗
-
-    /// 長按（自動重複）：把剛被吃成注音組件的鍵退掉、改為直出原始字元，
-    /// 並開始英文接續段（長按開頭＝要打小寫英文）。
-    /// 聲調鍵除外（按下當下音節已完成，undo 語意混亂，且空組字區時聲調鍵本來就放行）。
-    private func handleLongPress(_ ch: Character) -> Output {
-        if longPressKey == ch { return .consumed }  // 已轉換，吞掉後續重複
-        if composer.rawKeys.last == ch,
-           let component = DachenLayout.component(for: ch),
-           !component.isTone {
-            _ = composer.backspace()
-            insertLiteral(String(ch))
-            longPressKey = ch
-            if ch.isLetter { isInLiteralRun = true }  // 數字長按維持單發
-            return .consumed
-        }
-        return isIdle ? .ignored : .consumed
-    }
-
-    /// 英文段中的一般按鍵：原樣直出；但若偵測到其實在打注音（兩個查得到的音節、
-    /// 含數字聲調），就把這串已直出的按鍵退掉、結束英文段、改走注音組字
-    private func handleLiteralRunKey(_ ch: Character) -> Output {
-        guard englishHintEnabled, let keys = literalRunDetector.feed(ch) else {
-            insertLiteral(String(ch))
-            return .consumed
-        }
-        // 最後一鍵還沒直出；前面的必須確實是剛直出的那幾個字元才動手
-        let emitted = keys.dropLast().map { Element.literal(String($0)) }
-        guard cursor >= emitted.count,
-              Array(elements[(cursor - emitted.count)..<cursor]) == emitted else {
-            insertLiteral(String(ch))
-            return .consumed
-        }
-        for _ in emitted { removeElement(at: cursor - 1) }
-        isInLiteralRun = false
-        for key in keys { _ = handle(key == " " ? .space : .character(key)) }
-        return .consumed
-    }
-
-    /// 數字鍵串追蹤：組字器空著時以數字鍵起頭就開始記，之後連續的
-    /// 數字鍵（含 . , -，它們同時是 ㄡㄝㄦ）一路累積；出現其他鍵即取消。
-    private func trackNumeric(_ ch: Character, composerWasEmpty: Bool) {
-        if !numericRaw.isEmpty {
-            // 數字起頭之後，字母與 . , - 都算同一串（1mm、0.4mm、5v）
-            if ch.isLetter || ch.isNumber || ".,-".contains(ch) {
-                numericRaw.append(ch)
-            } else {
-                cancelNumericRun()
-            }
-        } else if composerWasEmpty, ch.isNumber {
-            numericRaw = String(ch)
-        }
-    }
-
-    /// 組字中的音節標上一聲後，詞庫查得到嗎（空白鍵讓路給數字的判準）
-    private func tone1FormsKnownReading() -> Bool {
-        let syllable = composer.syllable
-        // 只有 ㄓㄔㄕㄖㄗㄘㄙ 能單獨成音節（知、吃、是、日、資、次、思）；
-        // 其餘聲母單獨出現不是字——詞庫雖收了「ㄅ」這個注音符號本身，不能當數。
-        let standalone: Set<Syllable.Initial> = [.zh, .ch, .sh, .r, .z, .c, .s]
-        guard syllable.medial != nil || syllable.final != nil
-                || syllable.initial.map(standalone.contains) == true else { return false }
-        var withTone = syllable
-        withTone.tone = .tone1
-        return !lexicon.unigrams(withTone.canonical).isEmpty
-    }
-
-    private func cancelNumericRun() {
-        numericRaw = ""
-        numericElements = 0
-    }
-
-    /// 把這串數字期間組出的注音全數退掉，改為直出數字文字
-    private func acceptNumber() {
-        guard let number = numberHint else { return }
-        composer.clear()
-        for _ in 0..<min(numericElements, cursor) {
-            removeElement(at: cursor - 1)
-        }
-        insertLiteral(number)
-        cancelNumericRun()
-    }
-
-    private func handleCharacter(_ ch: Character) -> Output {
-        let composerWasEmpty = composer.isEmpty
-        let keysBefore = composer.rawKeys
-        let overwritten = composer.overwriteCount > 0
-        switch composer.press(ch) {
-        case .absorbed:
-            trackNumeric(ch, composerWasEmpty: composerWasEmpty)
-            return .consumed
-        case .composed(let syllable):
-            if let (word, rest) = splitLiteralPrefix(keysBefore + String(ch), composed: syllable, overwritten: overwritten) {
-                cancelNumericRun()
-                insertLiteral(word)
-                insertReading(rest)
-                return .consumed
-            }
-            trackNumeric(ch, composerWasEmpty: composerWasEmpty)
-            if !numericRaw.isEmpty { numericElements += 1 }
-            insertReading(syllable)
-            return .consumed
-        case .rejected:
-            // 3/4/6/7 是聲調鍵，打在空音節上會被拒——那它就是使用者要的數字。
-            // 納入數字串（4mm、60fps 才起得了頭），並直接放進組字區。
-            if ch.isNumber, composer.isEmpty {
-                trackNumeric(ch, composerWasEmpty: true)
-                insertLiteral(String(ch))
-                if !numericRaw.isEmpty { numericElements += 1 }
-                return .consumed
-            }
-            if !composer.isEmpty {
-                if let output = acceptHintThenSymbol(ch) { return output }
-                cancelNumericRun()
-                return .consumed  // 打錯鍵不打斷組字
-            }
-            cancelNumericRun()
-            if ch == "`" { openSymbolSheet(); return .consumed }
-            if fullWidthPunctuation, let punct = Punctuation.fullWidth(ch) {
-                if elements.isEmpty { return Output(handled: true, commitText: punct) }
-                insertLiteral(punct)
-                return .consumed
-            }
-            if elements.isEmpty { return .ignored }
-            // 組字區有內容時打到非注音鍵：先上屏，再讓按鍵原樣送給應用程式
-            return Output(handled: false, commitText: flush())
-        }
-    }
-
-    /// 黏在英文／數字後面的符號（snake_case、I'll、10:30、a@b）：半形直出、之後的字母原樣接續；
-    /// 句末標點與括號（google? → google？）則照常全形
-    private static let stickySymbols: Set<Character> = ["_", "'", ":", "@", "#", "$", "%", "^", "&", "*", "=", "+", "~", "|", "\\"]
-
-    /// 組字中偵測到英文／數字時打到符號鍵：先把提示收成文字，再處理符號。非提示狀態回 nil
-    private func acceptHintThenSymbol(_ ch: Character) -> Output? {
-        guard Self.stickySymbols.contains(ch) || Punctuation.fullWidth(ch) != nil else { return nil }
-        if numberHint != nil {
-            acceptNumber()
-        } else if let hint = englishHint {
-            composer.clear()
-            insertLiteral(hint)
-        } else {
-            return nil
-        }
-        if Self.stickySymbols.contains(ch) {
-            insertLiteral(String(ch))
-            isInLiteralRun = true
-            return .consumed
-        }
-        if fullWidthPunctuation, let punct = Punctuation.fullWidth(ch) {
-            insertLiteral(punct)
-            return .consumed
-        }
-        return Output(handled: false, commitText: flush())
-    }
-
-    /// 組字區只有英文／數字直出的文字（沒有任何注音）
-    private var isPureLiteral: Bool {
-        composer.isEmpty && !elements.isEmpty && elements.allSatisfy { if case .literal = $0 { return true } else { return false } }
-    }
-
-    /// 打完英文或數字沒按 Tab 就接著打注音：鍵全混進同一個音節（push＋上＝ㄕㄧㄤˋ、150＋個＝ㄍㄜˋ，
-    /// 前面的鍵被後面的覆寫掉）。這時拆成「英文詞／數字＋剩下組出的音節」，前段越長越優先。
-    /// 只在「整串查不到」或「中途有覆寫」時才試——正常打注音兩者都不會發生。
-    /// ponytail: 一聲（空白收尾）且整串都是字母時會先被英文提示攔去開中英並列窗，那條路不拆
-    private func splitLiteralPrefix(_ keys: String, composed: Syllable, overwritten: Bool) -> (String, Syllable)? {
-        let wholeKnown = !lexicon.unigrams(composed.canonical).isEmpty
-        guard overwritten || !wholeKnown else { return nil }
-        let chars = Array(keys)
-        // 剩下至少「一個注音＋聲調」兩鍵
-        for cut in stride(from: chars.count - 2, through: 1, by: -1) {
-            let prefix = String(chars[..<cut])
-            let isNumber = prefix.first!.isNumber && prefix.last!.isNumber
-                && prefix.allSatisfy { $0.isNumber || ".,".contains($0) }
-            // 整串本來查得到（只是有覆寫）時，英文詞要 3 字母以上，避免把改鍵誤判成英文
-            let isWord = englishHintEnabled && cut >= (wholeKnown ? 3 : 2)
-                && prefix.allSatisfy { $0.isLetter || $0.isNumber }
-                && englishDetector?.isWord(prefix) == true
-            guard isNumber || isWord else { continue }
-            var rest = SyllableComposer()
-            let tail = chars[cut...]
-            // 中途就組成音節（夾了聲調鍵）＝不是「一個音節」，跳過
-            guard tail.dropLast().allSatisfy({ rest.press($0) == .absorbed }),
-                  case .composed(let syllable) = rest.press(tail.last!),
-                  !lexicon.unigrams(syllable.canonical).isEmpty else { continue }
-            return (prefix, syllable)
-        }
-        return nil
-    }
-
-    private func handleInSheet(_ key: KeyInput) -> Output? {
-        guard var current = sheet else { return nil }
-        switch key {
-        case .character(let ch):
-            if let digit = ch.wholeNumberValue, (1...9).contains(digit) {
-                let page = current.highlighted / pageSize
-                let index = page * pageSize + digit - 1
-                // 只選本頁（每頁 7 字時，8、9 不該跳去選下一頁的字）
-                if digit <= pageSize, index < current.all.count { return choose(current.all[index], kind: current.kind) }
-                return .consumed
-            }
-            if ch == "`", current.kind == .symbols {
-                return choose(DecodedSegment(start: cursor, length: 0, value: "`", reading: nil), kind: .symbols)  // 連按兩下＝要 ` 本身
-            }
-            // 繼續打字：關窗、照常組字
-            sheet = nil
-            return nil
-        // 直式清單導航：↑↓ 逐項、←→ 與 PgUp/PgDn 翻頁、空白循環
-        case .space:
-            current.highlighted = (current.highlighted + 1) % current.all.count
-            sheet = current
-            return .consumed
-        case .arrowDown:
-            current.highlighted = min(current.all.count - 1, current.highlighted + 1)
-            sheet = current
-            return .consumed
-        case .arrowUp:
-            current.highlighted = max(0, current.highlighted - 1)
-            sheet = current
-            return .consumed
-        case .arrowRight, .pageDown, .tab:
-            current.highlighted = min(current.all.count - 1, current.highlighted + pageSize)
-            sheet = current
-            return .consumed
-        case .arrowLeft, .pageUp:
-            current.highlighted = max(0, current.highlighted - pageSize)
-            sheet = current
-            return .consumed
-        case .enter:
-            return choose(current.all[current.highlighted], kind: current.kind)
-        case .escape:
-            sheet = nil
-            return .consumed
-        case .backspace:
-            sheet = nil
-            return current.kind == .symbols ? .consumed : nil  // 符號表退格只收窗
-        case .shiftBackspace:
-            sheet = nil
-            return nil
-        case .englishLiteral:
-            sheet = nil
-            return nil
-        case .repeatedCharacter:
-            return .consumed  // 候選窗開啟時忽略長按重複，避免連續選字
-        }
-    }
-
-    // MARK: - 聯想詞
-
-/// 目前該顯示的聯想詞（空＝不顯示）。其他視窗或提示開著時讓路。
-    /// 跟著最後一個詞即時更新；打注音打到一半也維持顯示，不會每個音節閃一下。
-    private var visibleAssociations: [String] {
-        guard associationsEnabled, suggestionsAllowed, let store = userPhrases, let last = walked.last
-        else { return [] }
-        return store.nextWords(after: last.value, limit: 5)
-    }
-
-    private var visibleCompletion: String? { suggestionsAllowed ? aiCompletion : nil }
-
-    /// 提示列（聯想詞、AI 補句）可以出現的時機：其他視窗或提示開著時讓路，
-    /// 游標回頭改字時不提示
-    private var suggestionsAllowed: Bool {
-        sheet == nil && bilingual == nil && !isInLiteralRun && englishHint == nil && numberHint == nil
-            && cursor == elements.count && !elements.isEmpty
-    }
-
-    /// AI 校正的對象：組好的字與每個字的注音（標點等直出的單字為 nil＝不能改）。
-    /// 每個元素剛好一個字時才提供（夾了 google 這種多字的英文就不校正），
-    /// 游標要在句尾（回頭改字時不動它）。
-    public var correctionTarget: (text: String, readings: [String?])? {
-        guard composer.isEmpty, sheet == nil, bilingual == nil, !isInLiteralRun,
-              !elements.isEmpty, cursor == elements.count else { return nil }
-        let texts = elementTexts()
-        guard texts.allSatisfy({ $0.count == 1 }) else { return nil }
-        return (texts.joined(), elements.map(\.readingValue))
-    }
-
-    /// AI 校正的文法限制（llama.cpp GBNF）：每一格只能是原字或同讀音的常用字（前 12 個），
-    /// 標點等直出的字只能原樣。模型根本寫不出不同音的字，就不會白問一次（實驗 H：修 5、改壞 0）。
-    public var correctionGrammar: String? {
-        guard let target = correctionTarget else { return nil }
-        func quoted(_ text: String) -> String {
-            "\"" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
-        }
-        let slots = zip(target.text, target.readings).map { char, reading -> String in
-            var choices = [String(char)]
-            for unigram in reading.map({ lexicon.unigrams($0) }) ?? [] where unigram.value.count == 1 {
-                guard choices.count < 13 else { break }
-                if !choices.contains(unigram.value) { choices.append(unigram.value) }
-            }
-            return "(" + choices.map(quoted).joined(separator: " | ") + ")"
-        }
-        return "root ::= " + slots.joined(separator: " ")
-    }
-
-    /// 套用 AI 校正：組字區還是同一句、字數一樣才套用；只採用「同音」的改動（保險），
-    /// 改到的詞以 pin 固定（跟使用者自己選字一樣，按 ↓ 還能改回來，但不記入選字學習）。
-    /// - Returns: 有沒有真的改到字
-    @discardableResult
-    public func applyCorrection(_ corrected: String, to original: String) -> Bool {
-        guard let target = correctionTarget, target.text == original, corrected.count == original.count
-        else { return false }
-        let old = Array(original), proposed = Array(corrected)
-        var chars = old
-        for index in old.indices where proposed[index] != old[index] {
-            guard let reading = target.readings[index] else { continue }  // 標點等直出的字不改
-            let candidate = String(proposed[index])
-            if lexicon.unigrams(reading).contains(where: { $0.value == candidate }) {
-                chars[index] = proposed[index]
-            }
-        }
-        guard chars != old else { return false }
-        for segment in walked where segment.reading != nil
-            && (segment.start..<segment.end).contains(where: { chars[$0] != old[$0] }) {
-            pins.removeAll { $0.start < segment.end && segment.start < $0.end }
-            pins.append(DecodedSegment(
-                start: segment.start, length: segment.length,
-                value: String(chars[segment.start..<segment.end]), reading: segment.reading, keepsOriginal: true
-            ))
-        }
-        rewalk()
-        return true
-    }
-
-    /// 要給 AI 接下去的「目前組好的字」：注音打完一個音節、游標在句尾時才有值
-    public var completionContext: String? {
-        guard composer.isEmpty, suggestionsAllowed else { return nil }
-        return elementTexts().joined()
-    }
-
-    private func handleArmedAssociations(_ key: KeyInput) -> Output? {
-        associationArmed = false
-        let shown = visibleAssociations
-        guard !shown.isEmpty else { return nil }
-        switch key {
-        case .character(let ch):
-            guard let digit = ch.wholeNumberValue, (1...shown.count).contains(digit) else { return nil }
-            acceptAssociation(shown[digit - 1])
-            return .consumed
-        case .tab:
-            acceptAssociation(shown[0])  // Tab 兩下＝第一個
-            return .consumed
-        case .escape:
-            return .consumed  // 只取消選擇，組字區不動
-        default:
-            return nil  // 其他鍵：取消選擇、照常處理
-        }
-    }
-
-    /// 打到一半的注音當作就是要打這個詞，換成它
-    /// ponytail: 以直出片段插入（接續表只存詞、不存讀音），插入後不能再用 ↓ 改字；要能改得在接續表存讀音
-    private func acceptAssociation(_ word: String) {
-        composer.clear()
-        cancelNumericRun()
-        associationArmed = false
-        insertLiteral(word)
-    }
-
-    /// 滑鼠點了小窗的第 index 項（本頁內，從 0 起）：跟按對應的鍵一樣
-    public func click(itemAt index: Int) -> Output {
-        if sheet != nil || bilingual != nil {
-            return handle(.character(Character(String(index + 1))))
-        }
-        if englishHintView() != nil { return handle(.tab) }
-        var shown = visibleAssociations
-        if let completion = visibleCompletion { shown.insert(completion, at: 0) }  // 同提示列的順序
-        guard shown.indices.contains(index) else { return .ignored }
-        acceptAssociation(shown[index])
-        return .consumed
-    }
-
-    // MARK: - 中英並列選字
-
-    private func openBilingualSheet() {
-        guard let raw = englishHint else { return }
-        var choices: [BilingualChoice] = []
-        var seen = Set<String>()
-        if let expansion = shortcuts.expansion(for: raw) { choices.append(.english(expansion)) }  // 快捷文字排第一
-        for variant in [raw, raw.prefix(1).uppercased() + raw.dropFirst(), raw.uppercased()]
-        where seen.insert(variant).inserted {
-            choices.append(.english(variant))
-        }
-        // 一聲中文字並列：使用者按空白原本想要的那個字
-        var syllable = composer.syllable
-        syllable.tone = .tone1
-        let tone1Display = lexicon.unigrams(syllable.canonical).first?.value ?? syllable.display
-        choices.append(.tone1(display: tone1Display))
-        bilingual = BilingualSheet(choices: choices)
-    }
-
-    private func handleInBilingual(_ key: KeyInput) -> Output? {
-        guard var current = bilingual else { return nil }
-        switch key {
-        case .character(let ch):
-            if let digit = ch.wholeNumberValue, (1...current.choices.count).contains(digit) {
-                selectBilingual(current.choices[digit - 1])
-                return .consumed
-            }
-            // 繼續打字＝先上反白項，再照常處理這個鍵（不然 google 會被接著打的注音吃掉）
-            selectBilingual(current.choices[current.highlighted])
-            return nil
-        case .englishLiteral:
-            selectBilingual(current.choices[current.highlighted])
-            return nil
-        case .space, .arrowDown:
-            current.highlighted = (current.highlighted + 1) % current.choices.count
-            bilingual = current
-            return .consumed
-        case .arrowUp:
-            current.highlighted = (current.highlighted - 1 + current.choices.count) % current.choices.count
-            bilingual = current
-            return .consumed
-        case .enter:
-            selectBilingual(current.choices[current.highlighted])
-            return .consumed
-        case .tab:
-            // Tab 維持快速上英文：選反白項，反白在一聲字上則取第一個英文
-            if case .tone1 = current.choices[current.highlighted] {
-                selectBilingual(current.choices[0])
-            } else {
-                selectBilingual(current.choices[current.highlighted])
-            }
-            return .consumed
-        case .escape:
-            bilingual = nil  // 收窗、保留組字中的注音
-            return .consumed
-        case .backspace:
-            // 退一個字母、窗不關（還像英文就用新字串重開）
-            bilingual = nil
-            _ = composer.backspace()
-            openBilingualSheet()
-            return .consumed
-        default:
-            bilingual = nil
-            return nil
-        }
-    }
-
-    private func selectBilingual(_ choice: BilingualChoice) {
-        bilingual = nil
-        switch choice {
-        case .english(let text):
-            composer.clear()
-            insertLiteral(text)
-        case .tone1:
-            _ = handleCharacter(" ")  // 照原本的空白行為組一聲字
-        }
-    }
-
-    private func openSheet() {
-        guard let anchor = anchorSegment() else { return }
-        // 數字（Tab 確認過的 1234）：列出千分位、大寫、國字等寫法
-        if anchor.reading == nil {
-            let forms = NumberForms.forms(of: anchor.value)
-            guard !forms.isEmpty else { return }
-            sheet = Sheet(
-                all: forms.map { DecodedSegment(start: anchor.start, length: 1, value: $0, reading: nil) },
-                anchor: anchor.start, highlighted: 0, kind: .number(index: anchor.start)
-            )
-            return
-        }
-        var all = decoder.candidateSegments(elements, start: anchor.start, after: previousWord(before: anchor.start))
-        guard !all.isEmpty else { return }
-        let highlighted = all.firstIndex { $0.value == anchor.value && $0.length == anchor.length } ?? 0
-        // 今天、現在…：日期時間寫法緊接在目前的詞後面，第一頁就看得到
-        // ponytail: 只認整個詞剛好是「今天」的段；被併進長詞（今天晚上）時不出現
-        if let reading = anchor.reading {
-            let dates = DateMacro.forms(for: reading).map {
-                DecodedSegment(start: anchor.start, length: anchor.length, value: $0, reading: reading)
-            }
-            all.insert(contentsOf: dates, at: highlighted + 1)
-        }
-        sheet = Sheet(all: all, anchor: anchor.start, highlighted: highlighted)
-    }
-
-    private func openSymbolSheet() {
-        sheet = Sheet(
-            all: SymbolTable.symbols.map { DecodedSegment(start: cursor, length: 0, value: $0, reading: nil) },
-            anchor: cursor, highlighted: 0, kind: .symbols
-        )
-    }
-
-    private func choose(_ segment: DecodedSegment, kind: Sheet.Kind) -> Output {
-        switch kind {
-        case .words:
-            select(segment)
-        case .symbols:
-            sheet = nil
-            if elements.isEmpty { return Output(handled: true, commitText: segment.value) }
-            insertLiteral(segment.value)
-        case .number(let index):
-            sheet = nil
-            elements[index] = .literal(segment.value)
-            rewalk()
-        }
-        return .consumed
-    }
-
-    private func select(_ segment: DecodedSegment) {
-        var segment = segment
-        // 選的就是原本組出來的字：只是確認，不算改字
-        segment.keepsOriginal = walked.contains {
-            $0.start == segment.start && $0.length == segment.length && $0.value == segment.value
-        }
-        pins.removeAll { $0.start < segment.end && segment.start < $0.end }
-        pins.append(segment)
-        if let reading = segment.reading, !DateMacro.forms(for: reading).contains(segment.value) {
-            userPhrases?.bump(reading: reading, value: segment.value, after: previousWord(before: segment.start))
-        }
-        rewalk()
-        cursor = min(segment.end + 1, elements.count)  // 指向下一個字（游標＝其右邊）
-        sheet = nil
-    }
-
-    /// 這個位置前面那個詞：組字區裡的前一段；在句首就用游標前已上屏的前文（沒有就 "^"）
-    private func previousWord(before start: Int) -> String {
-        walked.first { $0.end == start }?.value ?? decoder.startKey
-    }
-
     // MARK: - 元素操作
 
-    private func insertReading(_ syllable: Syllable) {
+    func insertReading(_ syllable: Syllable) {
         insert(.reading(syllable.canonical))
     }
 
-    private func insertLiteral(_ text: String) {
+    func insertLiteral(_ text: String) {
         insert(.literal(text))
     }
 
-    private func insert(_ element: Element) {
+    func insert(_ element: Element) {
         pins = pins.compactMap { pin in
             if pin.end <= cursor { return pin }
             if pin.start >= cursor {
@@ -1093,7 +438,7 @@ public final class InputEngine {
         rewalk()
     }
 
-    private func removeElement(at index: Int) {
+    func removeElement(at index: Int) {
         pins = pins.compactMap { pin in
             if pin.end <= index { return pin }
             if pin.start > index {
@@ -1106,7 +451,7 @@ public final class InputEngine {
         rewalk()
     }
 
-    private func rewalk() {
+    func rewalk() {
         walked = decoder.walk(elements, pins: pins)
         aiCompletion = nil  // 組字區變了：舊的補句作廢
     }
@@ -1116,13 +461,13 @@ public final class InputEngine {
         isInLiteralRun = false
     }
 
-    private func isLiteral(at index: Int) -> Bool {
+    func isLiteral(at index: Int) -> Bool {
         guard elements.indices.contains(index) else { return false }
         if case .literal = elements[index] { return true }
         return false
     }
 
-    private func reset() {
+    func reset() {
         elements = []
         cursor = 0
         pins = []
@@ -1135,33 +480,30 @@ public final class InputEngine {
         cancelNumericRun()
     }
 
-    private func flushOutput() -> Output {
+    func flushOutput() -> Output {
         // 數字鍵串組不成中文（1.62＝ㄅㄡˊ＋半個ㄉ）：Enter 直接出數字。
         // 組得成的維持中文——「打」＝2ㄉ8ㄚ3ˇ 整串都是數字鍵，不能變 283；要數字請按 Tab。
         if numberHint != nil, numericRunIsNotChinese { acceptNumber() }
         // 快捷文字本的縮寫：Enter 送出展開內容（要縮寫本身請按 Tab）
-        if let raw = englishHint, let expansion = shortcuts.expansion(for: raw) {
-            composer.clear()
-            insertLiteral(expansion)
-        }
+        if let raw = englishHint, shortcuts.expansion(for: raw) != nil { acceptHint(expandingShortcut: true) }
         guard let text = flush() else { return .ignored }
         return Output(handled: true, commitText: text)
     }
 
     /// 數字串期間組出的東西有沒有不成字的：半個音節，或詞庫查不到的讀音（顯示成注音符號）
-    private var numericRunIsNotChinese: Bool {
+    var numericRunIsNotChinese: Bool {
         if !composer.isEmpty { return true }
         let start = cursor - min(numericElements, cursor)
         return walked.contains { $0.start >= start && $0.end <= cursor && $0.reading != nil && $0.value == $0.reading }
     }
 
-    private func committedText() -> String {
+    func committedText() -> String {
         spaced(elementTexts() + [composingText]).joined()
     }
 
     /// 漢字與英數字相鄰處補一個空白（加在後一段開頭）。已有空白就不再加，重複套用結果不變。
     /// ponytail: 只看組字區內部；跟 app 裡已上屏的前文之間不補（要讀 client 前文才做得到）
-    private func spaced(_ texts: [String]) -> [String] {
+    func spaced(_ texts: [String]) -> [String] {
         guard autoSpacing else { return texts }
         func isHan(_ ch: Character) -> Bool { ch.unicodeScalars.first?.properties.isIdeographic == true }
         func isAlnum(_ ch: Character) -> Bool { ch.isASCII && (ch.isLetter || ch.isNumber) }
@@ -1178,7 +520,7 @@ public final class InputEngine {
     }
 
     /// 每個元素對應的顯示文字：詞值一字對一音時逐字分配，否則整段掛在首元素
-    private func elementTexts() -> [String] {
+    func elementTexts() -> [String] {
         var texts = [String](repeating: "", count: elements.count)
         for segment in walked {
             let chars = Array(segment.value)
@@ -1194,7 +536,7 @@ public final class InputEngine {
     }
 
     /// 游標所在的詞段（按 ↓ 開候選的對象）
-    private func anchorSegment() -> DecodedSegment? {
+    func anchorSegment() -> DecodedSegment? {
         guard !elements.isEmpty else { return nil }
         let index = max(0, min(cursor - 1, elements.count - 1))
         return walked.first { $0.start <= index && index < $0.end }
